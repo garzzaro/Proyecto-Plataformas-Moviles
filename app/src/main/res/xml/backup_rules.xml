@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?><!-- Cabecera estándar del archivo XML con su codificación UTF-8 -->
+<!--
+   Sample backup rules file; uncomment and customize as necessary.
+   See https://developer.android.com/guide/topics/data/autobackup
+   for details.
+   Note: This file is ignored for devices older than API 31
+   See https://developer.android.com/about/versions/12/backup-restore
+-->
+<full-backup-content> <!-- Nodo raíz que contiene las reglas para las copias de seguridad automáticas en la nube de Google -->
+    <!--
+    <include domain="sharedpref" path="."/>
+    <exclude domain="sharedpref" path="device.xml"/>
+    -->
+</full-backup-content>

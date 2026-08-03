@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?> <!-- Define la cabecera XML y codificación UTF-8 -->
+<resources> <!-- Contenedor general para definición de recursos de la aplicación -->
+    <string name="app_name">HabitOcto</string> <!-- Define la cadena de texto con el nombre oficial de la app ("HabitOcto") -->
+</resources>

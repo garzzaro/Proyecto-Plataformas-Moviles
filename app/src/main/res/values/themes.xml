@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?> <!-- Cabecera estándar del archivo XML con su codificación UTF-8 -->
+<resources> <!-- Elemento raíz obligatorio para envolver la declaración de recursos en Android -->
+
+    <!-- Define el tema global "Theme.MyApplication" heredando del tema por defecto de Android sin barra de acción nativa -->
+    <style name="Theme.MyApplication" parent="android:Theme.DeviceDefault.NoActionBar" />
+</resources>

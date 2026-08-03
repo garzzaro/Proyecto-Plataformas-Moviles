@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?> <!-- Define la versión de XML y la codificación de caracteres a utilizar (UTF-8) -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" <!-- Declara el espacio de nombres XML para los atributos estándar de Android -->
+    xmlns:tools="http://schemas.android.com/tools"> <!-- Declara el espacio de nombres XML para herramientas adicionales del IDE -->
+
+    <uses-permission android:name="android.permission.INTERNET" /> <!-- Solicita permiso para acceder a Internet (necesario para Coil al cargar imágenes remotas) -->
+
+    <application <!-- Inicia la definición de la aplicación Android y su configuración global -->
+        android:allowBackup="true" <!-- Permite o deniega la copia de seguridad de datos de la app a Google Drive -->
+        android:dataExtractionRules="@xml/data_extraction_rules" <!-- Apunta al archivo XML que detalla las reglas de extracción de datos para copias de seguridad de Android 12+ -->
+        android:fullBackupContent="@xml/backup_rules" <!-- Especifica el archivo XML con las reglas de copia de seguridad completa para dispositivos antiguos -->
+        android:icon="@mipmap/ic_launcher" <!-- Asigna el icono oficial/principal de la app para el cajón de aplicaciones del celular -->
+        android:label="@string/app_name" <!-- Define el nombre visible de la app en el dispositivo cargado desde strings.xml -->
+        android:roundIcon="@mipmap/ic_launcher_round" <!-- Asigna el icono redondo alternativo requerido en lanzadores modernos -->
+        android:supportsRtl="true" <!-- Habilita el soporte para lectura de derecha a izquierda (RTL) como el árabe o hebreo -->
+        android:theme="@style/Theme.MyApplication"> <!-- Establece el tema base de la aplicación (definido en themes.xml) -->
+        <activity <!-- Declara el componente de actividad (pantalla visible de la app) -->
+            android:name=".MainActivity" <!-- Apunta al nombre de la clase Kotlin de la actividad principal (.MainActivity) -->
+            android:exported="true" <!-- Permite que el sistema operativo u otras apps inicien esta actividad -->
+            android:label="@string/app_name" <!-- Nombre que se mostrará en la barra de la pantalla si existiera -->
+            android:theme="@style/Theme.MyApplication"> <!-- Sobrescribe o hereda el tema base para esta pantalla en específico -->
+            <intent-filter> <!-- Filtro para capturar intentos y saber cómo inicializar la actividad -->
+                <action android:name="android.intent.action.MAIN" /> <!-- Indica que esta actividad es el punto de inicio principal de la aplicación -->
+
+                <category android:name="android.intent.category.LAUNCHER" /> <!-- Coloca el icono de la aplicación en el menú principal/lanzador del teléfono móvil -->
+            </intent-filter>
+        </activity>
+    </application>
+
+</manifest>
