@@ -68,7 +68,7 @@ import coil.compose.AsyncImage // Importa el cargador de imágenes remotas (URLs
 import com.example.ui.theme.* // Importa todos los elementos de la carpeta de diseño (colores, tema, tipografías)
 
 // ============================================================================
-// CLASE PRINCIPAL: MainActivity
+// CLASE PRINCIPAL: MainActivity (Lab #1: Layouts, Material 3 e imágenes con Coil)
 // ============================================================================
 
 /**
