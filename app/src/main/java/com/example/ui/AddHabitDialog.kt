@@ -1,73 +1,77 @@
-package com.example.ui
+package com.example.ui // Declaración del paquete al que pertenece este diálogo
 
-import android.widget.Toast
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.isSystemInDarkTheme
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Icon
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
-import androidx.compose.material3.SwitchDefaults
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
-import coil.compose.AsyncImage
-import com.example.R
-import com.example.model.HabitItem
-import com.example.ui.theme.CardWhite
-import com.example.ui.theme.PrimaryTeal
-import com.example.ui.theme.SecondaryTeal
-import com.example.ui.theme.TextDark
-import com.example.ui.components.ScreenBackground
-import com.example.ui.components.TextGray
-import com.example.ui.components.getCategoryBgColor
-import com.example.ui.components.getCategoryIcon
+import android.widget.Toast // Importa para alertas flotantes de Android
+import androidx.compose.foundation.background // Modificador de color de fondo
+import androidx.compose.foundation.border // Modificador de borde
+import androidx.compose.foundation.clickable // Modificador para hacer clics
+import androidx.compose.foundation.layout.Arrangement // Configuración de alineamiento
+import androidx.compose.foundation.layout.Box // Contenedor para apilar elementos
+import androidx.compose.foundation.layout.Column // Contenedor vertical
+import androidx.compose.foundation.layout.Row // Contenedor horizontal
+import androidx.compose.foundation.layout.Spacer // Componente separador
+import androidx.compose.foundation.layout.fillMaxSize // Ocupar tamaño máximo
+import androidx.compose.foundation.layout.fillMaxWidth // Ocupar ancho máximo
+import androidx.compose.foundation.layout.height // Altura fija
+import androidx.compose.foundation.layout.padding // Márgenes internos
+import androidx.compose.foundation.layout.size // Dimensiones cuadradas
+import androidx.compose.foundation.layout.width // Ancho fijo
+import androidx.compose.foundation.lazy.LazyRow // Fila eficiente con desplazamiento
+import androidx.compose.foundation.lazy.items // Carga elementos dinámicos
+import androidx.compose.foundation.rememberScrollState // Guarda estado de scroll
+import androidx.compose.foundation.shape.CircleShape // Forma de círculo
+import androidx.compose.foundation.shape.RoundedCornerShape // Forma redondeada
+import androidx.compose.foundation.isSystemInDarkTheme // Detecta modo oscuro
+import androidx.compose.foundation.verticalScroll // Modificador de scroll vertical
+import androidx.compose.material3.Button // Botón de Material 3
+import androidx.compose.material3.ButtonDefaults // Propiedades de botones
+import androidx.compose.material3.ExperimentalMaterial3Api // Soporte experimental
+import androidx.compose.material3.MaterialTheme // Acceso al tema actual
+import androidx.compose.material3.Icon // Elemento de dibujo vectorial
+import androidx.compose.material3.OutlinedTextField // Campo de texto delineado
+import androidx.compose.material3.OutlinedTextFieldDefaults // Propiedades de campos
+import androidx.compose.material3.Surface // Contenedor de elevaciones
+import androidx.compose.material3.Switch // Control deslizable activo/inactivo
+import androidx.compose.material3.SwitchDefaults // Colores de switches
+import androidx.compose.material3.Text // Componente de texto
+import androidx.compose.material3.TextButton // Botón plano
+import androidx.compose.runtime.Composable // Anotación Compose
+import androidx.compose.runtime.getValue // Delegado de lectura de estados
+import androidx.compose.runtime.mutableStateOf // Inicialización de estados
+import androidx.compose.runtime.remember // Persiste estado en recomposiciones
+import androidx.compose.runtime.setValue // Delegado de escritura de estados
+import androidx.compose.ui.Alignment // Alineación espacial
+import androidx.compose.ui.Modifier // Modificador de Compose
+import androidx.compose.ui.draw.clip // Modificador de recorte
+import androidx.compose.ui.graphics.Color // Objeto de color
+import androidx.compose.ui.layout.ContentScale // Escala de imagen
+import androidx.compose.ui.platform.LocalContext // Contexto actual de Android
+import androidx.compose.ui.res.painterResource // Cargador de drawable local
+import androidx.compose.ui.text.font.FontWeight // Peso tipográfico
+import androidx.compose.ui.unit.dp // Unidad de pixeles independientes
+import androidx.compose.ui.unit.sp // Unidad para textos
+import androidx.compose.ui.window.Dialog // Diálogo nativo modal
+import androidx.compose.ui.window.DialogProperties // Configuración de diálogos
+import coil.compose.AsyncImage // Cargador de imágenes Coil
+import com.example.R // Recursos del proyecto
+import com.example.model.HabitItem // Modelo de hábito
+import com.example.ui.theme.CardWhite // Token de color
+import com.example.ui.theme.PrimaryTeal // Token de color
+import com.example.ui.theme.SecondaryTeal // Token de color
+import com.example.ui.theme.TextDark // Token de color
+import com.example.ui.components.ScreenBackground // Token de fondo
+import com.example.ui.components.TextGray // Token de color
+import com.example.ui.components.getCategoryBgColor // Utilidad de color
+import com.example.ui.components.getCategoryIcon // Utilidad de ícono
 
+/**
+ * CategoryOption define la estructura básica de una categoría seleccionable.
+ */
 data class CategoryOption(
-    val id: String,
-    val name: String
+    val id: String, // ID único
+    val name: String // Nombre de la categoría
 )
 
+// Lista de categorías estáticas para la creación de hábitos (mínimo de 10 elementos)
 val expandedCategories = listOf(
     CategoryOption("1", "Hidratación"),
     CategoryOption("2", "Aprendizaje"),
@@ -81,36 +85,47 @@ val expandedCategories = listOf(
     CategoryOption("10", "Salud Mental")
 )
 
+/**
+ * AddHabitScreen es un diálogo a pantalla completa para la creación y configuración de nuevos hábitos.
+ *
+ * - **¿Para qué sirve?** Captura los parámetros (nombre, categoría, frecuencia, progreso, etc.) y genera un objeto `HabitItem`.
+ * - **¿Cómo funciona?**
+ *   1. Utiliza estados locales reactivos (`remember { mutableStateOf(...) }`) para cada campo del formulario.
+ *   2. Despliega un modal a pantalla completa usando el composable `Dialog`.
+ *   3. Llama al callback `onSaveHabit` al presionar "Guardar" y valida que el nombre no esté en blanco.
+ * - **¿Qué pasa si lo quitamos?** Los usuarios no podrían crear nuevos hábitos ni personalizarlos.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AddHabitScreen(
-    onDismiss: () -> Unit,
-    onSaveHabit: (HabitItem) -> Unit
+    onDismiss: () -> Unit, // Callback para cerrar el diálogo
+    onSaveHabit: (HabitItem) -> Unit // Callback para pasar el hábito nuevo al MainActivity
 ) {
-    val context = LocalContext.current
-    var habitName by remember { mutableStateOf("") }
-    var selectedCategory by remember { mutableStateOf("Hidratación") }
-    var isDailyFrequency by remember { mutableStateOf(true) }
-    var isProgressive by remember { mutableStateOf(false) }
-    var dailyGoalText by remember { mutableStateOf("") }
-    var reminderTime by remember { mutableStateOf("08:00 AM") }
-    var isReminderEnabled by remember { mutableStateOf(true) }
-    var durationText by remember { mutableStateOf("00:30 horas") }
+    val context = LocalContext.current // Contexto local de Android
+    var habitName by remember { mutableStateOf("") } // Estado del campo Nombre del Hábito
+    var selectedCategory by remember { mutableStateOf("Hidratación") } // Estado de la categoría activa
+    var isDailyFrequency by remember { mutableStateOf(true) } // Estado del botón de frecuencia
+    var isProgressive by remember { mutableStateOf(false) } // Estado para saber si es progresivo
+    var dailyGoalText by remember { mutableStateOf("") } // Texto del campo de meta de progreso diaria
+    var reminderTime by remember { mutableStateOf("08:00 AM") } // Hora seleccionada para el recordatorio
+    var isReminderEnabled by remember { mutableStateOf(true) } // Interruptor de recordatorio activo
+    var durationText by remember { mutableStateOf("00:30 horas") } // Texto de duración estimada
 
+    // Crea el modal
     Dialog(
         onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false)
+        properties = DialogProperties(usePlatformDefaultWidth = false) // Deshabilita ancho predeterminado para hacerlo inmersivo
     ) {
         Surface(
-            modifier = Modifier.fillMaxSize(),
-            color = ScreenBackground
+            modifier = Modifier.fillMaxSize(), // Rellena toda la pantalla
+            color = ScreenBackground // Color de fondo dinámico adaptable
         ) {
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(16.dp)
-                    .verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
+                    .padding(16.dp) // Relleno simétrico múltiplo de 4dp
+                    .verticalScroll(rememberScrollState()), // Habilita el desplazamiento vertical si la pantalla es muy pequeña
+                verticalArrangement = Arrangement.spacedBy(16.dp) // Espaciado de 16dp
             ) {
                 // Cabecera: Cancelar - Añadir Nuevo Hábito
                 Row(
@@ -123,7 +138,7 @@ fun AddHabitScreen(
                     TextButton(onClick = onDismiss) {
                         Text(
                             text = "Cancelar",
-                            color = MaterialTheme.colorScheme.primary,
+                            color = MaterialTheme.colorScheme.primary, // Teal interactivo
                             fontSize = 16.sp,
                             fontWeight = FontWeight.Bold
                         )
@@ -133,10 +148,10 @@ fun AddHabitScreen(
                         text = "Añadir Nuevo Hábito",
                         fontSize = 18.sp,
                         fontWeight = FontWeight.Bold,
-                        color = TextDark
+                        color = TextDark // Color según tema
                     )
 
-                    Spacer(modifier = Modifier.width(48.dp))
+                    Spacer(modifier = Modifier.width(48.dp)) // Espaciador decorativo para alinear al centro
                 }
 
                 // Campo 1: Nombre del Hábito
@@ -163,7 +178,7 @@ fun AddHabitScreen(
                     )
                 }
 
-                // Campo 2: Categoría (LazyRow con keys estables)
+                // Campo 2: Categoría (LazyRow horizontal de 10 elementos con keys estables)
                 Column {
                     Text(
                         text = "Categoría",
@@ -185,7 +200,7 @@ fun AddHabitScreen(
                                 Box(
                                     modifier = Modifier
                                         .size(56.dp)
-                                        .background(getCategoryBgColor(cat.name), CircleShape)
+                                        .background(getCategoryBgColor(cat.name), CircleShape) // Color según tema e ítem
                                         .border(
                                             width = if (isSelected) 3.dp else 0.dp,
                                             color = if (isSelected) MaterialTheme.colorScheme.primary else Color.Transparent,
@@ -224,7 +239,7 @@ fun AddHabitScreen(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .background(Color(0xFFE0E0E0), RoundedCornerShape(12.dp))
+                            .background(if (isSystemInDarkTheme()) Color(0xFF383838) else Color(0xFFE0E0E0), RoundedCornerShape(12.dp))
                             .padding(4.dp)
                     ) {
                         Box(
@@ -265,7 +280,7 @@ fun AddHabitScreen(
                     }
                 }
 
-                // Campo 4: Hábito Progresivo
+                // Campo 4: Hábito Progresivo (Interruptor Switch)
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -291,6 +306,7 @@ fun AddHabitScreen(
                     )
                 }
 
+                // Campo condicional: Meta Diaria si el hábito es Progresivo
                 if (isProgressive) {
                     Column {
                         Text(
@@ -345,7 +361,7 @@ fun AddHabitScreen(
                     )
                 }
 
-                // Campo 6: Duración
+                // Campo 6: Duración estimada
                 Column {
                     Text(
                         text = "Duración / Tiempo",
@@ -366,7 +382,7 @@ fun AddHabitScreen(
 
                 Spacer(modifier = Modifier.height(8.dp))
 
-                // Burbuja del Pulpo usando la foto Pulpo con AsyncImage
+                // Diálogo/Burbuja con la mascota Pulpo usando Coil y la foto local
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.End,
@@ -388,27 +404,29 @@ fun AddHabitScreen(
 
                     Spacer(modifier = Modifier.width(8.dp))
 
-                    AsyncImage(
-                        model = R.drawable.pulpo,
-                        placeholder = painterResource(id = R.drawable.ic_launcher_background),
-                        contentDescription = "Mascota Octo",
-                        modifier = Modifier
-                            .size(60.dp)
-                            .clip(CircleShape),
-                        contentScale = ContentScale.Crop
-                    )
-                }
+                     AsyncImage( // Muestra la foto de pulpo local usando Coil desde la URL de GitHub
+                        model = "https://raw.githubusercontent.com/garzzaro/Proyecto-Plataformas-Moviles/feature/lab2-lazy-list/app/src/main/res/drawable/pulpo.avif", // Carga la imagen de la mascota desde la URL de GitHub
+                        placeholder = painterResource(id = R.drawable.ic_launcher_background), // Rúbrica: Placeholder de carga obligatorio
+                        contentDescription = "Mascota Octo", // Descripción de accesibilidad
+                        modifier = Modifier // Modificadores de diseño
+                            .size(60.dp) // Tamaño cuadrado de 60dp
+                            .clip(CircleShape), // Recorte circular
+                        contentScale = ContentScale.Crop // Recorte proporcional
+                    ) // Fin de AsyncImage
+                } // Fin de Row
 
                 Spacer(modifier = Modifier.height(8.dp))
 
                 // Botón Guardar
                 Button(
                     onClick = {
+                        // Validación de nombre obligatorio
                         if (habitName.isBlank()) {
                             Toast.makeText(context, "Escribe el nombre del hábito", Toast.LENGTH_SHORT).show()
                             return@Button
                         }
 
+                        // Instanciación del nuevo hábito inmutable
                         val newHabit = HabitItem(
                             id = System.currentTimeMillis().toString(),
                             title = habitName,
@@ -423,6 +441,7 @@ fun AddHabitScreen(
                             tags = listOf(if (isDailyFrequency) "Diario" else "Semanal", selectedCategory)
                         )
 
+                        // Pasa el hábito y descarta modal
                         onSaveHabit(newHabit)
                         Toast.makeText(context, "¡Hábito '$habitName' guardado!", Toast.LENGTH_SHORT).show()
                         onDismiss()
