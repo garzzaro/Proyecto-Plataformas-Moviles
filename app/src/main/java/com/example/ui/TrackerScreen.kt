@@ -56,6 +56,7 @@ import com.example.ui.theme.TextDark // Importa color oscuro de texto
 import com.example.ui.components.ScreenBackground // Importa color de fondo de pantalla
 import com.example.ui.components.TextGray // Importa color gris de texto
 import com.example.ui.components.WeeklyProgressCard // Importa componente semanal
+import com.example.TopNavigationBarSection // Importa la cabecera superior compartida desde el paquete principal
 
 // Lista inicial de hábitos (data class inmutable, 11 elementos > 10 mínimos para scroll)
 val initialHabitsList = listOf( // Declara lista estática de hábitos
@@ -207,6 +208,11 @@ fun TrackerScreen( // Declaración de la pantalla del rastreador
         contentPadding = PaddingValues(horizontal = 20.dp, vertical = 12.dp), // Paddings simétricos
         verticalArrangement = Arrangement.spacedBy(16.dp) // Espaciado simétrico de 16dp entre cada bloque
     ) { // Inicio de items deslizables
+        // 0. Cabecera superior compartida (Logo del pulpo y campana de notificaciones)
+        item { // Ítem deslizable único para la cabecera
+            TopNavigationBarSection() // Llama a la sección de cabecera superior
+        } // Fin ítem deslizable
+
         // 1. Banner motivacional de Mascota
         item { // Ítem deslizable único
             MascotBannerCard( // Llama al banner de la mascota

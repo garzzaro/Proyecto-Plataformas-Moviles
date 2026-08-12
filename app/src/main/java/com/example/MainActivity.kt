@@ -60,6 +60,7 @@ import androidx.compose.ui.draw.clip // Modificador para recortar la forma visua
 import androidx.compose.ui.graphics.Color // Importa la representación cromática ARGB nativa en Compose
 import androidx.compose.ui.layout.ContentScale // Define cómo se escala y recorta una imagen dentro de su contenedor
 import androidx.compose.ui.platform.LocalContext // Obtiene el contexto actual del sistema Android
+import androidx.compose.ui.res.painterResource // Importa cargador de recursos locales (como drawables) para placeholders
 import androidx.compose.ui.text.font.FontWeight // Modifica el grosor tipográfico (normal, bold, medium, etc.)
 import androidx.compose.ui.tooling.preview.Preview // Anotación para ver vistas previas de UI sin compilar la app completa
 import androidx.compose.ui.unit.dp // Unidad de medida Density-Independent Pixels para márgenes y tamaños
@@ -359,56 +360,57 @@ fun HabitOctoProfileApp() { // Función contenedora de la aplicación
  *   visual de la marca y quitaría el acceso directo a las notificaciones.
  */
 @Composable // Composable de interfaz de usuario
-fun TopNavigationBarSection() { // Cabecera del logo y notificaciones
-  val context = LocalContext.current // Captura contexto del sistema operativo Android
+fun TopNavigationBarSection() { // Cabecera del logo y notificaciones de la aplicación
+  val context = LocalContext.current // Captura contexto del sistema operativo Android para Toasts
 
-  Row( // Contenedor horizontal
+  Row( // Contenedor horizontal de la cabecera
     modifier = Modifier // Inicia modificador
-      .fillMaxWidth() // Ancho completo
-      .padding( // Espaciado exterior e interior
+      .fillMaxWidth() // Ocupa todo el ancho horizontal
+      .padding( // Espaciado exterior e interior de la barra superior
         top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 8.dp, // Evita solaparse con la barra de notificaciones superior física de Android.
-        start = 20.dp, // Margen izquierdo
-        end = 20.dp, // Margen derecho
-        bottom = 8.dp // Margen inferior
-      ),
+        start = 20.dp, // Margen izquierdo de 20dp
+        end = 20.dp, // Margen derecho de 20dp
+        bottom = 8.dp // Margen inferior de 8dp
+      ), // Fin de padding
     horizontalArrangement = Arrangement.SpaceBetween, // Separa la marca de la campana a los extremos
-    verticalAlignment = Alignment.CenterVertically // Centra los elementos verticalmente
-  ) {
+    verticalAlignment = Alignment.CenterVertically // Centra los elementos verticalmente al medio
+  ) { // Inicio de Row
     // Fila izquierda: Logo del pulpo (representado por una imagen) y el nombre "HabitOcto"
     Row( // Sub-fila izquierda
       verticalAlignment = Alignment.CenterVertically, // Centrado vertical de la imagen y el texto
       horizontalArrangement = Arrangement.spacedBy(12.dp) // Espacio interno de 12dp entre imagen y texto
-    ) {
-      AsyncImage( // Componente cargador de imágenes desde URL
-        model = "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150", // Enlace de imagen remota
-        contentDescription = "App Logo Avatar", // Descripción
-        modifier = Modifier // Modificadores
+    ) { // Inicio de Row izquierda
+      AsyncImage( // Componente cargador de imágenes desde URL usando Coil
+        model = "https://raw.githubusercontent.com/garzzaro/Proyecto-Plataformas-Moviles/feature/lab2-lazy-list/app/src/main/res/drawable/pulpo.avif", // Carga la imagen de la mascota desde la URL de GitHub
+        placeholder = painterResource(id = R.drawable.ic_launcher_background), // Rúbrica: Placeholder de carga obligatorio
+        contentDescription = "App Logo Avatar", // Descripción de accesibilidad
+        modifier = Modifier // Modificadores de la imagen
           .size(38.dp) // Tamaño cuadrado de 38dp
           .clip(CircleShape), // Recorta en forma redonda para respetar el estándar visual.
         contentScale = ContentScale.Crop // Recorta proporcionalmente cubriendo el espacio
-      )
+      ) // Fin de AsyncImage
       Text( // Componente de texto para marca
         text = "HabitOcto", // Nombre de la aplicación
         color = MaterialTheme.colorScheme.primary, // Color primario Teal
         style = MaterialTheme.typography.titleLarge, // Texto de tamaño título
         fontWeight = FontWeight.Bold // Fuente gruesa/negrita
-      )
-    }
+      ) // Fin de Text
+    } // Fin de Row izquierda
 
     // Botón de notificaciones (Derecha)
     IconButton( // Componente de botón interactivo circular para icono
       onClick = { // Acción al hacer clic
         Toast.makeText(context, "Notificaciones", Toast.LENGTH_SHORT).show() // Muestra notificación flotante
-      }
-    ) {
+      } // Fin de onClick
+    ) { // Inicio de IconButton
       Icon( // Componente de icono vectorial
         imageVector = Icons.Outlined.Notifications, // Icono de campana delineada
         contentDescription = "Notifications", // Descripción
         tint = MaterialTheme.colorScheme.primary, // Tono principal
         modifier = Modifier.size(26.dp) // Tamaño de 26dp
-      )
-    }
-  }
+      ) // Fin de Icon
+    } // Fin de IconButton
+  } // Fin de Row
 }
 
 // ============================================================================
