@@ -60,15 +60,20 @@ import androidx.compose.ui.draw.clip // Modificador para recortar la forma visua
 import androidx.compose.ui.graphics.Color // Importa la representación cromática ARGB nativa en Compose
 import androidx.compose.ui.layout.ContentScale // Define cómo se escala y recorta una imagen dentro de su contenedor
 import androidx.compose.ui.platform.LocalContext // Obtiene el contexto actual del sistema Android
+import androidx.compose.ui.res.painterResource // Importa cargador de recursos locales (como drawables) para placeholders
 import androidx.compose.ui.text.font.FontWeight // Modifica el grosor tipográfico (normal, bold, medium, etc.)
 import androidx.compose.ui.tooling.preview.Preview // Anotación para ver vistas previas de UI sin compilar la app completa
 import androidx.compose.ui.unit.dp // Unidad de medida Density-Independent Pixels para márgenes y tamaños
 import androidx.compose.ui.unit.sp // Unidad de medida Scale-Independent Pixels para textos del usuario
 import coil.compose.AsyncImage // Importa el cargador de imágenes remotas (URLs) asíncronas de la librería Coil
 import com.example.ui.theme.* // Importa todos los elementos de la carpeta de diseño (colores, tema, tipografías)
+import com.example.ui.TrackerScreen
+import com.example.ui.AddHabitScreen
+import com.example.ui.initialHabitsList
+import androidx.compose.runtime.mutableStateListOf
 
 // ============================================================================
-// CLASE PRINCIPAL: MainActivity
+// CLASE PRINCIPAL: MainActivity (Lab #1: Layouts, Material 3 e imágenes con Coil)
 // ============================================================================
 
 /**
@@ -129,6 +134,10 @@ fun HabitOctoProfileApp() { // Función contenedora de la aplicación
   // - ¿Para qué sirve? Persiste la selección incluso si la pantalla se redibuja. Por defecto inicia en '2' (Profile).
   // - ¿Qué pasa si lo quitamos? No podríamos rastrear qué pestaña ha pulsado el usuario y la navegación inferior no respondería.
   var selectedTab by remember { mutableIntStateOf(2) } // Almacena el índice de la pestaña activa
+
+  // Lista de hábitos reactivos para el rastreador
+  val habitsList = remember { mutableStateListOf<com.example.model.HabitItem>().apply { addAll(initialHabitsList) } }
+  var isAddHabitDialogOpen by remember { mutableStateOf(false) }
 
   // Contexto local para mostrar notificaciones flotantes (Toasts).
   // - ¿Para qué sirve? Requerido para crear notificaciones emergentes en Android al pulsar elementos.
@@ -247,37 +256,90 @@ fun HabitOctoProfileApp() { // Función contenedora de la aplicación
       }
     }
   ) { innerPadding -> // Recibe márgenes calculados por Scaffold para evitar solapamientos
-    // LazyColumn: Contenedor vertical optimizado para listas de gran tamaño o contenido dinámico.
-    // - ¿Para qué sirve? Renderiza de forma eficiente solo lo que está visible en pantalla, ahorrando RAM y batería.
-    // - ¿Cómo funciona? Define los bloques interiores mediante 'item', permitiendo organizar la pantalla por secciones.
-    // - ¿Qué pasa si lo quitamos? La pantalla no se podrá desplazar, provocando que los elementos inferiores queden inaccesibles.
-    LazyColumn( // Columna recicladora
-      modifier = Modifier // Inicia modificador
-        .fillMaxSize() // Ocupa todo el espacio de pantalla
-        .background(MaterialTheme.colorScheme.background) // Fondo adaptable
-        .padding(innerPadding) // Aplica los márgenes de Scaffold
-        .padding(bottom = 16.dp), // Margen inferior extra para fluidez visual
-      verticalArrangement = Arrangement.spacedBy(16.dp) // Espaciado simétrico de 16dp entre secciones de la pantalla (múltiplo de 4).
-    ) { // Contenedores de elementos deslizables de la lista
-      // Sección 1: Cabecera superior (Logo y campana de notificaciones)
-      item { // Primer elemento deslizable
-        TopNavigationBarSection() // Llama a la cabecera
-      }
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(innerPadding)
+    ) {
+        when (selectedTab) {
+            0 -> {
+                TrackerScreen(
+                    habits = habitsList,
+                    onToggleHabit = { habitToToggle ->
+                        val index = habitsList.indexOfFirst { it.id == habitToToggle.id }
+                        if (index != -1) {
+                            val current = habitsList[index]
+                            if (current.isProgressive) {
+                                val newProg = if (current.currentProgress >= current.maxProgress) 0 else current.currentProgress + 1
+                                habitsList[index] = current.copy(
+                                    currentProgress = newProg,
+                                    isCompleted = newProg >= current.maxProgress
+                                )
+                            } else {
+                                habitsList[index] = current.copy(isCompleted = !current.isCompleted)
+                            }
+                        }
+                    },
+                    onOpenAddHabit = { isAddHabitDialogOpen = true }
+                )
+            }
+            1 -> {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "Sección de Comunidad (Próximamente)",
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onBackground
+                    )
+                }
+            }
+            2 -> {
+                // LazyColumn: Contenedor vertical optimizado para listas de gran tamaño o contenido dinámico.
+                // - ¿Para qué sirve? Renderiza de forma eficiente solo lo que está visible en pantalla, ahorrando RAM y batería.
+                // - ¿Cómo funciona? Define los bloques interiores mediante 'item', permitiendo organizar la pantalla por secciones.
+                // - ¿Qué pasa si lo quitamos? La pantalla no se podrá desplazar, provocando que los elementos inferiores queden inaccesibles.
+                LazyColumn( // Columna recicladora
+                  modifier = Modifier // Inicia modificador
+                    .fillMaxSize() // Ocupa todo el espacio de pantalla
+                    .background(MaterialTheme.colorScheme.background) // Fondo adaptable
+                    .padding(bottom = 16.dp), // Margen inferior extra para fluidez visual
+                  verticalArrangement = Arrangement.spacedBy(16.dp) // Espaciado simétrico de 16dp entre secciones de la pantalla (múltiplo de 4).
+                ) { // Contenedores de elementos deslizables de la lista
+                  // Sección 1: Cabecera superior (Logo y campana de notificaciones)
+                  item { // Primer elemento deslizable
+                    TopNavigationBarSection() // Llama a la cabecera
+                  }
 
-      // Sección 2: Cabecera del perfil (Foto, nombre, nivel del usuario)
-      item { // Segundo elemento deslizable
-        ProfileHeaderSection() // Llama a la sección de perfil
-      }
+                  // Sección 2: Cabecera del perfil (Foto, nombre, nivel del usuario)
+                  item { // Segundo elemento deslizable
+                    ProfileHeaderSection() // Llama a la sección de perfil
+                  }
 
-      // Sección 3: Métricas de consistencia, rachas y precisión
-      item { // Tercer elemento deslizable
-        PersonalStatsSection() // Llama al dashboard de métricas
-      }
+                  // Sección 3: Métricas de consistencia, rachas y precisión
+                  item { // Tercer elemento deslizable
+                    PersonalStatsSection() // Llama al dashboard de métricas
+                  }
 
-      // Sección 4: Datos de cuenta (Email, password y verificación de dos factores)
-      item { // Cuarto elemento deslizable
-        AccountDataSection() // Llama al panel de ajustes de seguridad
-      }
+                  // Sección 4: Datos de cuenta (Email, password y verificación de dos factores)
+                  item { // Cuarto elemento deslizable
+                    AccountDataSection() // Llama al panel de ajustes de seguridad
+                  }
+                }
+            }
+        }
+
+        // Diálogo de añadir hábito
+        if (isAddHabitDialogOpen) {
+            AddHabitScreen(
+                onDismiss = { isAddHabitDialogOpen = false },
+                onSaveHabit = { newHabit ->
+                    habitsList.add(0, newHabit)
+                    isAddHabitDialogOpen = false
+                }
+            )
+        }
     }
   }
 }
@@ -298,56 +360,57 @@ fun HabitOctoProfileApp() { // Función contenedora de la aplicación
  *   visual de la marca y quitaría el acceso directo a las notificaciones.
  */
 @Composable // Composable de interfaz de usuario
-fun TopNavigationBarSection() { // Cabecera del logo y notificaciones
-  val context = LocalContext.current // Captura contexto del sistema operativo Android
+fun TopNavigationBarSection() { // Cabecera del logo y notificaciones de la aplicación
+  val context = LocalContext.current // Captura contexto del sistema operativo Android para Toasts
 
-  Row( // Contenedor horizontal
+  Row( // Contenedor horizontal de la cabecera
     modifier = Modifier // Inicia modificador
-      .fillMaxWidth() // Ancho completo
-      .padding( // Espaciado exterior e interior
+      .fillMaxWidth() // Ocupa todo el ancho horizontal
+      .padding( // Espaciado exterior e interior de la barra superior
         top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 8.dp, // Evita solaparse con la barra de notificaciones superior física de Android.
-        start = 20.dp, // Margen izquierdo
-        end = 20.dp, // Margen derecho
-        bottom = 8.dp // Margen inferior
-      ),
+        start = 20.dp, // Margen izquierdo de 20dp
+        end = 20.dp, // Margen derecho de 20dp
+        bottom = 8.dp // Margen inferior de 8dp
+      ), // Fin de padding
     horizontalArrangement = Arrangement.SpaceBetween, // Separa la marca de la campana a los extremos
-    verticalAlignment = Alignment.CenterVertically // Centra los elementos verticalmente
-  ) {
+    verticalAlignment = Alignment.CenterVertically // Centra los elementos verticalmente al medio
+  ) { // Inicio de Row
     // Fila izquierda: Logo del pulpo (representado por una imagen) y el nombre "HabitOcto"
     Row( // Sub-fila izquierda
       verticalAlignment = Alignment.CenterVertically, // Centrado vertical de la imagen y el texto
       horizontalArrangement = Arrangement.spacedBy(12.dp) // Espacio interno de 12dp entre imagen y texto
-    ) {
-      AsyncImage( // Componente cargador de imágenes desde URL
-        model = "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150", // Enlace de imagen remota
-        contentDescription = "App Logo Avatar", // Descripción
-        modifier = Modifier // Modificadores
+    ) { // Inicio de Row izquierda
+      AsyncImage( // Componente cargador de imágenes desde URL usando Coil
+        model = "https://raw.githubusercontent.com/garzzaro/Proyecto-Plataformas-Moviles/feature/lab2-lazy-list/app/src/main/res/drawable/pulpo.avif", // Carga la imagen de la mascota desde la URL de GitHub
+        placeholder = painterResource(id = R.drawable.ic_launcher_background), // Rúbrica: Placeholder de carga obligatorio
+        contentDescription = "App Logo Avatar", // Descripción de accesibilidad
+        modifier = Modifier // Modificadores de la imagen
           .size(38.dp) // Tamaño cuadrado de 38dp
           .clip(CircleShape), // Recorta en forma redonda para respetar el estándar visual.
         contentScale = ContentScale.Crop // Recorta proporcionalmente cubriendo el espacio
-      )
+      ) // Fin de AsyncImage
       Text( // Componente de texto para marca
         text = "HabitOcto", // Nombre de la aplicación
         color = MaterialTheme.colorScheme.primary, // Color primario Teal
         style = MaterialTheme.typography.titleLarge, // Texto de tamaño título
         fontWeight = FontWeight.Bold // Fuente gruesa/negrita
-      )
-    }
+      ) // Fin de Text
+    } // Fin de Row izquierda
 
     // Botón de notificaciones (Derecha)
     IconButton( // Componente de botón interactivo circular para icono
       onClick = { // Acción al hacer clic
         Toast.makeText(context, "Notificaciones", Toast.LENGTH_SHORT).show() // Muestra notificación flotante
-      }
-    ) {
+      } // Fin de onClick
+    ) { // Inicio de IconButton
       Icon( // Componente de icono vectorial
         imageVector = Icons.Outlined.Notifications, // Icono de campana delineada
         contentDescription = "Notifications", // Descripción
         tint = MaterialTheme.colorScheme.primary, // Tono principal
         modifier = Modifier.size(26.dp) // Tamaño de 26dp
-      )
-    }
-  }
+      ) // Fin de Icon
+    } // Fin de IconButton
+  } // Fin de Row
 }
 
 // ============================================================================
@@ -421,7 +484,7 @@ fun ProfileHeaderSection() { // Cabecera del usuario
 
     // Subtítulo e información secundaria
     Text( // Componente
-      text = "Master of Focus • Joined March 2024", // Subtexto informativo
+      text = "Maestro del Enfoque • Unido en Marzo 2024", // Subtexto informativo
       style = MaterialTheme.typography.bodyMedium, // Estilo de cuerpo medio
       fontWeight = FontWeight.Medium, // Peso intermedio
       color = if (isDark) TextGrayDark else TextGrayLight // Aplica color gris adaptable según el tema del celular
@@ -472,13 +535,13 @@ fun PersonalStatsSection() { // Sección de métricas
       verticalAlignment = Alignment.Bottom // Alineación inferior
     ) {
       Text( // Título del dashboard
-        text = "Personal Stats", // Nombre
+        text = "Estadísticas Personales", // Nombre
         style = MaterialTheme.typography.titleMedium, // Título mediano
         fontWeight = FontWeight.Bold, // Negrita
         color = MaterialTheme.colorScheme.primary // Verde Teal
       )
       Text( // Período temporal
-        text = "THIS MONTH", // Texto
+        text = "ESTE MES", // Texto
         style = MaterialTheme.typography.labelSmall, // Fuente muy pequeña
         fontWeight = FontWeight.Bold, // Peso grueso
         color = textGray // Gris adaptable
@@ -502,7 +565,7 @@ fun PersonalStatsSection() { // Sección de métricas
         ) {
           Column { // Sub-columna de datos numéricos
             Text( // Nombre métrica
-              text = "Consistency",
+              text = "Consistencia",
               style = MaterialTheme.typography.bodyMedium,
               fontWeight = FontWeight.Medium,
               color = textGray
@@ -574,7 +637,7 @@ fun PersonalStatsSection() { // Sección de métricas
           horizontalAlignment = Alignment.CenterHorizontally // Centrado de textos y número
         ) {
           Text( // Título
-            text = "CURRENT STREAK", // Etiqueta
+            text = "RACHA ACTUAL", // Etiqueta
             style = MaterialTheme.typography.labelSmall,
             fontWeight = FontWeight.Bold,
             color = subtitleStreakColor // Color del tema de racha
@@ -588,7 +651,7 @@ fun PersonalStatsSection() { // Sección de métricas
           )
           Spacer(modifier = Modifier.height(2.dp)) // Separador
           Text( // Subtítulo descriptivo
-            text = "Days Strong", // Días completados
+            text = "Días Seguidos", // Días completados
             style = MaterialTheme.typography.bodySmall,
             fontWeight = FontWeight.Medium,
             color = subtitleStreakColor // Tono marrón o naranja suave
@@ -610,7 +673,7 @@ fun PersonalStatsSection() { // Sección de métricas
           horizontalAlignment = Alignment.CenterHorizontally // Centrado
         ) {
           Text( // Título
-            text = "ACCURACY", // Etiqueta
+            text = "PRECISIÓN", // Etiqueta
             style = MaterialTheme.typography.labelSmall,
             fontWeight = FontWeight.Bold,
             color = subtitleAccuracyColor // Color lavanda/azul de racha
@@ -635,7 +698,7 @@ fun PersonalStatsSection() { // Sección de métricas
           }
           Spacer(modifier = Modifier.height(2.dp)) // Separador
           Text( // Mensaje secundario
-            text = "Habit Integrity", // Nombre del índice
+            text = "Integridad de Hábito", // Nombre del índice
             style = MaterialTheme.typography.bodySmall,
             fontWeight = FontWeight.Medium,
             color = subtitleAccuracyColor // Tono azul lavanda
@@ -682,7 +745,7 @@ fun AccountDataSection() { // Sección de configuración de cuenta
   ) {
     // Título de la sección
     Text( // Título general de seguridad
-      text = "Account Data", // Cabecera
+      text = "Datos de la Cuenta", // Cabecera
       style = MaterialTheme.typography.titleMedium, // Fuente mediana
       fontWeight = FontWeight.Bold, // Letra gruesa
       color = MaterialTheme.colorScheme.primary, // Color Teal
@@ -717,7 +780,7 @@ fun AccountDataSection() { // Sección de configuración de cuenta
           modifier = Modifier.weight(1f) // Ocupa todo el espacio intermedio sobrante
         ) {
           Text( // Título de la tarjeta
-            text = "EMAIL ADDRESS", // Etiqueta
+            text = "DIRECCIÓN DE CORREO", // Etiqueta
             style = MaterialTheme.typography.labelSmall,
             fontWeight = FontWeight.Bold,
             color = textGray // Gris adaptable
@@ -731,7 +794,7 @@ fun AccountDataSection() { // Sección de configuración de cuenta
           )
         }
         Text( // Botón de acción rápido
-          text = "Change", // Cambiar
+          text = "Cambiar", // Cambiar
           style = MaterialTheme.typography.bodyLarge,
           fontWeight = FontWeight.Bold,
           color = MaterialTheme.colorScheme.primary, // Color Teal
@@ -770,7 +833,7 @@ fun AccountDataSection() { // Sección de configuración de cuenta
           modifier = Modifier.weight(1f) // Ocupa espacio medio
         ) {
           Text( // Título
-            text = "PASSWORD", // Etiqueta
+            text = "CONTRASEÑA", // Etiqueta
             style = MaterialTheme.typography.labelSmall,
             fontWeight = FontWeight.Bold,
             color = textGray
@@ -784,7 +847,7 @@ fun AccountDataSection() { // Sección de configuración de cuenta
           )
         }
         Text( // Botón de actualización
-          text = "Update", // Actualizar
+          text = "Actualizar", // Actualizar
           style = MaterialTheme.typography.bodyLarge,
           fontWeight = FontWeight.Bold,
           color = MaterialTheme.colorScheme.primary, // Teal
@@ -819,14 +882,14 @@ fun AccountDataSection() { // Sección de configuración de cuenta
           modifier = Modifier.weight(1f) // Ocupa espacio intermedio
         ) {
           Text( // Título
-            text = "TWO-FACTOR AUTH", // Etiqueta
+            text = "VERIFICACIÓN EN DOS PASOS", // Etiqueta
             style = MaterialTheme.typography.labelSmall,
             fontWeight = FontWeight.Bold,
             color = textGray
           )
           Spacer(modifier = Modifier.height(2.dp)) // Espacio mínimo
           Text( // Estado de activación
-            text = if (isTwoFactorEnabled) "Enabled" else "Disabled", // Evaluado dinámicamente
+            text = if (isTwoFactorEnabled) "Activo" else "Inactivo", // Evaluado dinámicamente
             style = MaterialTheme.typography.bodyLarge,
             fontWeight = FontWeight.Bold, // Negrita
             color = if (isTwoFactorEnabled) MaterialTheme.colorScheme.primary else textGray // Si está activo se pinta Teal, sino gris

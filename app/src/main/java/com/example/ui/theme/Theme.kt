@@ -25,14 +25,14 @@ import androidx.compose.ui.platform.LocalContext // Importa el proveedor de cont
  *   con fondo blanco a pesar de que el usuario tenga el modo oscuro activo.
  */
 private val DarkColorScheme = darkColorScheme(
-    primary = PrimaryTeal, // Asigna el Teal corporativo como color primario
-    secondary = SecondaryTeal, // Asigna el Teal brillante como color secundario/acento
+    primary = SecondaryTeal, // Asigna el Teal brillante como color primario en modo oscuro para alto contraste
+    secondary = PrimaryTeal, // Asigna el Teal corporativo oscuro como secundario
     background = ScreenBackgroundDark, // Aplica gris oscuro al fondo de pantalla
     surface = CardDark, // Aplica gris intermedio al fondo de las tarjetas
-    onPrimary = Color.White, // Color blanco para texto e iconos encima de áreas primarias
-    onSecondary = Color.Black, // Color negro para texto e iconos encima de áreas secundarias
+    onPrimary = Color(0xFF121212), // Texto oscuro sobre el fondo primario brillante
+    onSecondary = Color.White,
     onBackground = TextLight, // Color gris muy claro para el texto principal
-    onSurface = TextLight, // Color gris muy claro para textos dentro de tarjetas u hojas
+    onSurface = TextLight, // Color gris muy claro para textos dentro de tarjetas
 )
 
 /**
