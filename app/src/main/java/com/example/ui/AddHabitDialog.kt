@@ -64,14 +64,27 @@ import com.example.ui.components.TextDark
 import com.example.ui.components.TextGray
 import com.example.ui.components.getCategoryBgColor
 import com.example.ui.components.getCategoryIcon
+import com.example.ui.theme.BorderGrayDark
+import com.example.ui.theme.BorderGrayLight
+import com.example.ui.theme.DangerRed
+import com.example.ui.theme.DarkTealBackground
+import com.example.ui.theme.LightIconBoxBg
 import com.example.ui.theme.PrimaryTeal
 import com.example.ui.theme.SecondaryTeal
+import com.example.ui.theme.SurfaceDarkVariant
+import com.example.ui.theme.SurfaceLightVariant
 
+/**
+ * CategoryOption define la estructura de una categoría seleccionable.
+ */
 data class CategoryOption(
     val id: String,
     val name: String
 )
 
+/**
+ * Lista de categorías estáticas para clasificar hábitos.
+ */
 val expandedCategories = listOf(
     CategoryOption("1", "Hidratación"),
     CategoryOption("2", "Aprendizaje"),
@@ -86,12 +99,15 @@ val expandedCategories = listOf(
 )
 
 /**
- * AddHabitScreen es el formulario modal a pantalla completa para crear o editar hábitos y micro hábitos.
+ * AddHabitScreen es el formulario modal a pantalla completa para crear, modificar o eliminar hábitos y micro hábitos.
  *
- * - **¿Para qué sirve?** Permite al usuario crear nuevos hábitos, editar los existentes y eliminarlos.
- * - **¿Cómo funciona?** Recibe un hábito opcional `habitToEdit`. Si existe, precarga sus valores y permite
- *   modificarlos o borrarlos mediante `onDeleteHabit`.
- * - **¿Qué pasa si lo quitamos?** No se podrían ingresar ni actualizar los datos de los hábitos en la app.
+ * - **¿Para qué sirve?** Permite al usuario capturar un nuevo hábito, editar uno existente o eliminarlo de su rutina.
+ * - **¿Cómo funciona?**
+ *   1. Recibe un hábito opcional `habitToEdit`. Si existe, inicializa los campos con sus valores actuales.
+ *   2. Permite conmutar entre hábito convencional y micro hábito mediante un Switch.
+ *   3. En modo edición, expone el botón de eliminación conectado a `onDeleteHabit`.
+ *   4. Al pulsar Guardar, construye un `HabitItem` inmutable y lo entrega al callback `onSaveHabit`.
+ * - **¿Qué pasa si lo quitamos?** El usuario no tendría ningún formulario para ingresar o ajustar hábitos en la aplicación.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -101,9 +117,11 @@ fun AddHabitScreen(
     onSaveHabit: (HabitItem) -> Unit,
     onDeleteHabit: ((HabitItem) -> Unit)? = null
 ) {
+    // Contexto de Android para Toasts de validación y confirmación
     val context = LocalContext.current
     val isEditing = habitToEdit != null
 
+    // Estados reactivos vinculados a los campos del formulario
     var habitName by remember { mutableStateOf(habitToEdit?.title ?: "") }
     var selectedCategory by remember { mutableStateOf(habitToEdit?.category ?: "Hidratación") }
     var isDailyFrequency by remember { mutableStateOf(habitToEdit?.frequency != "Semanal") }
@@ -114,6 +132,7 @@ fun AddHabitScreen(
     var isReminderEnabled by remember { mutableStateOf(true) }
     var durationText by remember { mutableStateOf(habitToEdit?.timeOrDuration?.ifEmpty { "00:30 horas" } ?: "00:30 horas") }
 
+    // Diálogo nativo de pantalla completa inmersiva
     Dialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false)
@@ -129,7 +148,7 @@ fun AddHabitScreen(
                     .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                // Cabecera del formulario
+                // Cabecera del formulario con botón Cancelar y título de acción
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -156,7 +175,7 @@ fun AddHabitScreen(
                     Spacer(modifier = Modifier.width(48.dp))
                 }
 
-                // Campo 1: Nombre del Hábito
+                // Campo 1: Nombre del hábito
                 Column {
                     Text(
                         text = "Nombre del Hábito",
@@ -168,21 +187,21 @@ fun AddHabitScreen(
                     OutlinedTextField(
                         value = habitName,
                         onValueChange = { habitName = it },
-                        placeholder = { Text("ej., Leer 1 Página", color = Color.Gray) },
+                        placeholder = { Text("ej., Leer 1 Página", color = TextGray) },
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(12.dp),
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedContainerColor = CardWhite,
                             unfocusedContainerColor = CardWhite,
                             focusedBorderColor = MaterialTheme.colorScheme.primary,
-                            unfocusedBorderColor = Color(0xFFE0E0E0),
+                            unfocusedBorderColor = BorderGrayLight,
                             focusedTextColor = TextDark,
                             unfocusedTextColor = TextDark
                         )
                     )
                 }
 
-                // Selector de Tipo: Hábito Completo vs Micro Hábito
+                // Switch de selección: Hábito estándar vs Micro Hábito
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -208,7 +227,7 @@ fun AddHabitScreen(
                     )
                 }
 
-                // Campo 2: Selector de Categoría horizontal
+                // Campo 2: Selector horizontal de categorías
                 Column {
                     Text(
                         text = stringResource(R.string.categor_a),
@@ -270,7 +289,7 @@ fun AddHabitScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .background(
-                                if (isSystemInDarkTheme()) Color(0xFF383838) else Color(0xFFE0E0E0),
+                                if (isSystemInDarkTheme()) BorderGrayDark else BorderGrayLight,
                                 RoundedCornerShape(12.dp)
                             )
                             .padding(4.dp)
@@ -313,7 +332,7 @@ fun AddHabitScreen(
                     }
                 }
 
-                // Campo 4: Hábito Progresivo (Switch)
+                // Campo 4: Interruptor de hábito progresivo con meta numérica
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -351,14 +370,14 @@ fun AddHabitScreen(
                         OutlinedTextField(
                             value = dailyGoalText,
                             onValueChange = { dailyGoalText = it },
-                            placeholder = { Text("ej., 8", color = Color.Gray) },
+                            placeholder = { Text("ej., 8", color = TextGray) },
                             modifier = Modifier.fillMaxWidth(),
                             shape = RoundedCornerShape(12.dp),
                             colors = OutlinedTextFieldDefaults.colors(
                                 focusedContainerColor = CardWhite,
                                 unfocusedContainerColor = CardWhite,
                                 focusedBorderColor = MaterialTheme.colorScheme.primary,
-                                unfocusedBorderColor = Color(0xFFE0E0E0),
+                                unfocusedBorderColor = BorderGrayLight,
                                 focusedTextColor = TextDark,
                                 unfocusedTextColor = TextDark
                             )
@@ -366,7 +385,7 @@ fun AddHabitScreen(
                     }
                 }
 
-                // Campo 5: Recordatorio
+                // Campo 5: Hora de recordatorio
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -383,7 +402,7 @@ fun AddHabitScreen(
                         Box(
                             modifier = Modifier
                                 .background(
-                                    if (isSystemInDarkTheme()) Color(0xFF263238) else Color(0xFFE8EAF6),
+                                    if (isSystemInDarkTheme()) SurfaceDarkVariant else SurfaceLightVariant,
                                     RoundedCornerShape(8.dp)
                                 )
                                 .padding(horizontal = 12.dp, vertical = 8.dp)
@@ -398,7 +417,7 @@ fun AddHabitScreen(
                     )
                 }
 
-                // Campo 6: Duración estimada
+                // Campo 6: Duración estimada del hábito
                 Column {
                     Text(
                         text = "Duración / Tiempo",
@@ -411,7 +430,7 @@ fun AddHabitScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .background(
-                                if (isSystemInDarkTheme()) Color(0xFF263238) else Color(0xFFE8EAF6),
+                                if (isSystemInDarkTheme()) SurfaceDarkVariant else SurfaceLightVariant,
                                 RoundedCornerShape(12.dp)
                             )
                             .padding(14.dp)
@@ -422,7 +441,7 @@ fun AddHabitScreen(
 
                 Spacer(modifier = Modifier.height(8.dp))
 
-                // Diálogo decorativo con la mascota Pulpo usando Coil
+                // Mensaje motivador con la mascota Pulpo
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.End,
@@ -432,7 +451,7 @@ fun AddHabitScreen(
                     Box(
                         modifier = Modifier
                             .background(
-                                if (isDark) Color(0xFF004D40) else Color(0xFFE0F7FA),
+                                if (isDark) DarkTealBackground else LightIconBoxBg,
                                 RoundedCornerShape(16.dp)
                             )
                             .padding(horizontal = 14.dp, vertical = 10.dp)
@@ -460,7 +479,7 @@ fun AddHabitScreen(
 
                 Spacer(modifier = Modifier.height(8.dp))
 
-                // Botón Guardar / Modificar Hábito
+                // Botón principal de guardado / actualización
                 Button(
                     onClick = {
                         if (habitName.isBlank()) {
@@ -507,7 +526,7 @@ fun AddHabitScreen(
                     )
                 }
 
-                // Botón Eliminar Hábito (Disponible solo en modo edición)
+                // Botón secundario para eliminar hábito existente (Solo disponible en modo edición)
                 if (isEditing && onDeleteHabit != null && habitToEdit != null) {
                     OutlinedButton(
                         onClick = {
@@ -519,14 +538,14 @@ fun AddHabitScreen(
                             .fillMaxWidth()
                             .height(50.dp),
                         colors = ButtonDefaults.outlinedButtonColors(
-                            contentColor = Color(0xFFE53935)
+                            contentColor = DangerRed
                         ),
                         shape = RoundedCornerShape(25.dp)
                     ) {
                         Icon(
                             imageVector = Icons.Outlined.Delete,
                             contentDescription = "Eliminar",
-                            tint = Color(0xFFE53935),
+                            tint = DangerRed,
                             modifier = Modifier.size(18.dp)
                         )
                         Spacer(modifier = Modifier.width(8.dp))
@@ -534,7 +553,7 @@ fun AddHabitScreen(
                             text = "Eliminar Hábito",
                             fontSize = 15.sp,
                             fontWeight = FontWeight.Bold,
-                            color = Color(0xFFE53935)
+                            color = DangerRed
                         )
                     }
                 }

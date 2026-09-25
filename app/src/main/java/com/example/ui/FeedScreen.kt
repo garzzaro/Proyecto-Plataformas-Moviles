@@ -2,7 +2,6 @@ package com.example.ui
 
 import android.widget.Toast
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -27,7 +26,6 @@ import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.outlined.AddPhotoAlternate
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material.icons.outlined.FavoriteBorder
-import androidx.compose.material.icons.outlined.Image
 import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -65,10 +63,14 @@ import com.example.ui.components.TextDark
 import com.example.ui.components.TextGray
 import com.example.ui.components.getCategoryBgColor
 import com.example.ui.components.getCategoryIcon
+import com.example.ui.theme.BorderGrayLight
+import com.example.ui.theme.LikePink
 import com.example.ui.theme.PrimaryTeal
 import com.example.ui.theme.SecondaryTeal
 
-// Lista inicial de publicaciones: exactamente 2 con imagen y 2 solo con texto
+/**
+ * Lista inicial de publicaciones: exactamente 2 con imagen y 2 únicamente de texto.
+ */
 val initialFeedPosts = listOf(
     FeedPostItem(
         id = "p1",
@@ -77,7 +79,7 @@ val initialFeedPosts = listOf(
         habitTitle = "Plancha 1 Min",
         habitCategory = "Ejercicio",
         content = "¡Completé mi micro hábito antes del desayuno! Día 14 consecutivo sin fallar 💪",
-        postImageUrl = "https://images.unsplash.com/photo-1517838277536-f5f99be501cd?w=800", // Publicación 1 con imagen
+        postImageUrl = "https://images.unsplash.com/photo-1517838277536-f5f99be501cd?w=800", // Publicación 1 con foto
         timeAgo = "Hace 15 min",
         likesCount = 12,
         isLiked = false,
@@ -103,7 +105,7 @@ val initialFeedPosts = listOf(
         habitTitle = "Meditación",
         habitCategory = "Mindfulness",
         content = "10 minutos de respiración consciente en el parque para empezar el día con paz mental 🧘‍♀️✨",
-        postImageUrl = "https://images.unsplash.com/photo-1506126613408-eca07ce68773?w=800", // Publicación 3 con imagen
+        postImageUrl = "https://images.unsplash.com/photo-1506126613408-eca07ce68773?w=800", // Publicación 3 con foto
         timeAgo = "Hace 3 horas",
         likesCount = 19,
         isLiked = false,
@@ -139,13 +141,22 @@ fun FeedScreen(
     onPublishPost: (String, String, String?) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    // Contexto de Android para emitir notificaciones visuales emergentes
     val context = LocalContext.current
+
+    // Estado reactivo del texto del nuevo post
     var newPostContent by remember { mutableStateOf("") }
+
+    // Estado reactivo de la categoría elegida para el post
     var selectedCategoryForPost by remember { mutableStateOf("General") }
+
+    // Estado reactivo que contiene la URL de la imagen adjunta opcional
     var attachedImageUrl by remember { mutableStateOf<String?>(null) }
+
+    // Opciones de categorías disponibles para clasificar las publicaciones del feed
     val categories = listOf("General", "Ejercicio", "Hidratación", "Mindfulness", "Productividad", "Nutrición")
 
-    // Lista de fotos de ejemplo para simular la subida de imagen desde galería
+    // Colección de fotografías de prueba para simular la selección de imagen de galería
     val sampleGalleryImages = listOf(
         "https://images.unsplash.com/photo-1517838277536-f5f99be501cd?w=800",
         "https://images.unsplash.com/photo-1544367567-0f2fcb009e0b?w=800",
@@ -153,6 +164,7 @@ fun FeedScreen(
         "https://images.unsplash.com/photo-1512621776951-a57141f2eefd?w=800"
     )
 
+    // Columna con reciclaje dinámico eficiente para desplazamiento vertical suave
     LazyColumn(
         modifier = modifier
             .fillMaxSize()
@@ -164,7 +176,7 @@ fun FeedScreen(
             TopNavigationBarSection()
         }
 
-        // Caja para redactar una nueva publicación con soporte de imagen
+        // Tarjeta para redactar y publicar una nueva historia en el feed
         item {
             Card(
                 modifier = Modifier
@@ -178,6 +190,7 @@ fun FeedScreen(
                     modifier = Modifier.padding(16.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
+                    // Título de la tarjeta de creación
                     Text(
                         text = "Comparte tu logro de hoy",
                         fontSize = 16.sp,
@@ -185,6 +198,7 @@ fun FeedScreen(
                         color = MaterialTheme.colorScheme.primary
                     )
 
+                    // Campo de entrada de texto para el mensaje de la publicación
                     OutlinedTextField(
                         value = newPostContent,
                         onValueChange = { newPostContent = it },
@@ -195,14 +209,14 @@ fun FeedScreen(
                             focusedContainerColor = Color.Transparent,
                             unfocusedContainerColor = Color.Transparent,
                             focusedBorderColor = MaterialTheme.colorScheme.primary,
-                            unfocusedBorderColor = Color(0xFFE0E0E0),
+                            unfocusedBorderColor = BorderGrayLight,
                             focusedTextColor = TextDark,
                             unfocusedTextColor = TextDark
                         ),
                         maxLines = 3
                     )
 
-                    // Previsualización de imagen adjunta si el usuario seleccionó una
+                    // Vista previa de la foto seleccionada con botón para retirarla
                     if (attachedImageUrl != null) {
                         Box(
                             modifier = Modifier
@@ -235,7 +249,7 @@ fun FeedScreen(
                         }
                     }
 
-                    // Selector de categoría para el post
+                    // Selector horizontal de la categoría que corresponde a la publicación
                     LazyRow(
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
@@ -261,15 +275,15 @@ fun FeedScreen(
                         }
                     }
 
-                    // Botones de acción: Adjuntar foto y Publicar
+                    // Fila con botones para adjuntar foto y enviar publicación
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
+                        // Botón secundario para simular la carga de foto desde la galería
                         OutlinedButton(
                             onClick = {
-                                // Simula la selección de imagen de galería
                                 attachedImageUrl = sampleGalleryImages.random()
                                 Toast.makeText(context, "Imagen seleccionada para adjuntar", Toast.LENGTH_SHORT).show()
                             },
@@ -290,6 +304,7 @@ fun FeedScreen(
                             )
                         }
 
+                        // Botón de confirmación para agregar el nuevo post a la lista
                         Button(
                             onClick = {
                                 if (newPostContent.isNotBlank() || attachedImageUrl != null) {
@@ -320,7 +335,7 @@ fun FeedScreen(
             }
         }
 
-        // Título de la sección de historias/publicaciones
+        // Título de la sección social de la comunidad
         item {
             Row(
                 modifier = Modifier
@@ -343,7 +358,7 @@ fun FeedScreen(
             }
         }
 
-        // Lista de publicaciones en el feed
+        // Renderizado dinámico de las publicaciones del feed
         items(items = posts, key = { it.id }) { post ->
             FeedPostCard(
                 post = post,
@@ -352,6 +367,7 @@ fun FeedScreen(
             )
         }
 
+        // Espaciador final para evitar colisión con barras de navegación
         item {
             Spacer(modifier = Modifier.height(16.dp))
         }
@@ -359,7 +375,11 @@ fun FeedScreen(
 }
 
 /**
- * FeedPostCard dibuja una tarjeta de publicación individual con autor, texto, imagen y acciones.
+ * FeedPostCard dibuja la tarjeta visual de una publicación individual en el feed.
+ *
+ * - **¿Para qué sirve?** Presenta la información del autor, contenido, imagen y barra de interacciones.
+ * - **¿Cómo funciona?** Evalúa si la publicación contiene una fotografía para dibujarla con Coil, junto a la racha y botones de me gusta.
+ * - **¿Qué pasa si lo quitamos?** Las publicaciones del feed no tendrían representación visual en pantalla.
  */
 @Composable
 fun FeedPostCard(
@@ -374,7 +394,7 @@ fun FeedPostCard(
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
-            // Cabecera: Avatar, Nombre del autor, hábito y tiempo transcurrido
+            // Cabecera: Avatar del usuario, nombre, hábito completado y tiempo transcurrido
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
@@ -405,7 +425,7 @@ fun FeedPostCard(
                     )
                 }
 
-                // Insignia de categoría e icono
+                // Burbuja decorativa con el icono de la categoría
                 Box(
                     modifier = Modifier
                         .size(34.dp)
@@ -434,7 +454,7 @@ fun FeedPostCard(
                 Spacer(modifier = Modifier.height(10.dp))
             }
 
-            // Imagen de la publicación si existe
+            // Imagen ilustrativa si la publicación incluye foto
             if (post.postImageUrl != null) {
                 AsyncImage(
                     model = post.postImageUrl,
@@ -449,7 +469,7 @@ fun FeedPostCard(
                 Spacer(modifier = Modifier.height(10.dp))
             }
 
-            // Badge de racha si tiene racha activa
+            // Insignia de racha en días si el hábito tiene racha activa
             if (post.streakCount > 0) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
@@ -466,13 +486,13 @@ fun FeedPostCard(
                 Spacer(modifier = Modifier.height(8.dp))
             }
 
-            // Barra inferior de interacciones (Likes, comentarios y compartir)
+            // Fila de interacciones: Me gusta, comentar y compartir
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // Botón de me gusta
+                // Botón interactivo de me gusta con contador dinámico
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier.clickable { onLikeClick() }
@@ -480,7 +500,7 @@ fun FeedPostCard(
                     Icon(
                         imageVector = if (post.isLiked) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
                         contentDescription = "Me gusta",
-                        tint = if (post.isLiked) Color(0xFFE91E63) else TextGray,
+                        tint = if (post.isLiked) LikePink else TextGray,
                         modifier = Modifier.size(20.dp)
                     )
                     Spacer(modifier = Modifier.width(6.dp))
@@ -488,11 +508,11 @@ fun FeedPostCard(
                         text = "${post.likesCount}",
                         fontSize = 13.sp,
                         fontWeight = FontWeight.Medium,
-                        color = if (post.isLiked) Color(0xFFE91E63) else TextGray
+                        color = if (post.isLiked) LikePink else TextGray
                     )
                 }
 
-                // Botón de comentarios
+                // Botón para acceder a comentarios
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(
                         imageVector = Icons.Outlined.ChatBubbleOutline,
@@ -508,7 +528,7 @@ fun FeedPostCard(
                     )
                 }
 
-                // Botón de compartir
+                // Botón para compartir la publicación externamente
                 IconButton(onClick = { }) {
                     Icon(
                         imageVector = Icons.Outlined.Share,

@@ -26,7 +26,6 @@ import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.FitnessCenter
 import androidx.compose.material.icons.outlined.FlashOn
-import androidx.compose.material.icons.outlined.MenuBook
 import androidx.compose.material.icons.outlined.NightsStay
 import androidx.compose.material.icons.outlined.Palette
 import androidx.compose.material.icons.outlined.Payments
@@ -36,6 +35,7 @@ import androidx.compose.material.icons.outlined.SelfImprovement
 import androidx.compose.material.icons.outlined.Timer
 import androidx.compose.material.icons.outlined.WaterDrop
 import androidx.compose.material.icons.outlined.WorkOutline
+import androidx.compose.material.icons.automirrored.outlined.MenuBook
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -63,10 +63,39 @@ import coil.compose.AsyncImage
 import com.example.R
 import com.example.model.HabitHistoryItem
 import com.example.model.HabitItem
+import com.example.ui.theme.BorderGrayDark
+import com.example.ui.theme.BorderGrayLight
+import com.example.ui.theme.BorderInactiveDark
+import com.example.ui.theme.BorderInactiveLight
+import com.example.ui.theme.BorderTrackDark
 import com.example.ui.theme.CardAccuracyDark
 import com.example.ui.theme.CardAccuracyLight
 import com.example.ui.theme.CardStreakDark
 import com.example.ui.theme.CardStreakLight
+import com.example.ui.theme.CategoryArtDark
+import com.example.ui.theme.CategoryArtLight
+import com.example.ui.theme.CategoryFinanceDark
+import com.example.ui.theme.CategoryFinanceLight
+import com.example.ui.theme.CategoryFitnessDark
+import com.example.ui.theme.CategoryFitnessLight
+import com.example.ui.theme.CategoryHydrationDark
+import com.example.ui.theme.CategoryHydrationLight
+import com.example.ui.theme.CategoryLearningDark
+import com.example.ui.theme.CategoryLearningLight
+import com.example.ui.theme.CategoryMentalDark
+import com.example.ui.theme.CategoryMentalLight
+import com.example.ui.theme.CategoryMindfulnessDark
+import com.example.ui.theme.CategoryMindfulnessLight
+import com.example.ui.theme.CategoryNutritionDark
+import com.example.ui.theme.CategoryNutritionLight
+import com.example.ui.theme.CategoryProductivityDark
+import com.example.ui.theme.CategoryProductivityLight
+import com.example.ui.theme.CategorySleepDark
+import com.example.ui.theme.CategorySleepLight
+import com.example.ui.theme.ChipBackgroundDark
+import com.example.ui.theme.ChipBackgroundLight
+import com.example.ui.theme.DangerRed
+import com.example.ui.theme.LightTealBg
 import com.example.ui.theme.NumberAccuracyDark
 import com.example.ui.theme.NumberAccuracyLight
 import com.example.ui.theme.NumberStreakDark
@@ -79,12 +108,11 @@ import com.example.ui.theme.SubtitleStreakDark
 import com.example.ui.theme.SubtitleStreakLight
 import com.example.ui.theme.TextGrayDark
 import com.example.ui.theme.TextGrayLight
+import com.example.ui.theme.TimerOrange
 
 // ============================================================================
 // VALORES DE COLOR DINÁMICOS COMPOSABLES (Para Soporte de Modo Oscuro Premium)
 // ============================================================================
-
-val LightTealBg = Color(0xFFE0F7FA)
 
 val TextGray: Color
     @Composable
@@ -131,12 +159,16 @@ val SubtitleAccuracyColor: Color
 // ============================================================================
 
 /**
- * getCategoryIcon devuelve el ícono vectorial según la categoría especificada.
+ * getCategoryIcon devuelve el ícono vectorial adecuado según el nombre de categoría ingresado.
+ *
+ * - **¿Para qué sirve?** Asocia visualmente cada categoría con su correspondiente icono semántico de Material Design.
+ * - **¿Cómo funciona?** Evalúa la cadena de texto de la categoría ignorando mayúsculas y minúsculas.
+ * - **¿Qué pasa si lo quitamos?** Todos los hábitos mostrarían el mismo icono genérico sin distinción gráfica.
  */
 fun getCategoryIcon(category: String): ImageVector {
     return when (category.lowercase()) {
         "hidratación", "hydration" -> Icons.Outlined.WaterDrop
-        "aprendizaje", "learning" -> Icons.Outlined.MenuBook
+        "aprendizaje", "learning" -> Icons.AutoMirrored.Outlined.MenuBook
         "ejercicio", "fitness" -> Icons.Outlined.FitnessCenter
         "mindfulness" -> Icons.Outlined.SelfImprovement
         "productividad", "productivity" -> Icons.Outlined.WorkOutline
@@ -150,23 +182,27 @@ fun getCategoryIcon(category: String): ImageVector {
 }
 
 /**
- * getCategoryBgColor devuelve el color adaptado para la burbuja de la categoría.
+ * getCategoryBgColor devuelve el color de fondo adaptado para la burbuja de la categoría.
+ *
+ * - **¿Para qué sirve?** Proporciona colores distintivos para cada categoría en modo diurno y nocturno.
+ * - **¿Cómo funciona?** Utiliza las constantes centralizadas de [Color.kt] reaccionando a `isSystemInDarkTheme()`.
+ * - **¿Qué pasa si lo quitamos?** Las tarjetas de categorías perderían su identificación visual cromática.
  */
 @Composable
 fun getCategoryBgColor(category: String): Color {
     val isDark = isSystemInDarkTheme()
     return when (category.lowercase()) {
-        "hidratación", "hydration" -> if (isDark) Color(0xFF004D40) else Color(0xFFE0F7FA)
-        "aprendizaje", "learning" -> if (isDark) Color(0xFF311B92) else Color(0xFFF3E5F5)
-        "ejercicio", "fitness" -> if (isDark) Color(0xFFE65100) else Color(0xFFFFE0B2)
-        "mindfulness" -> if (isDark) Color(0xFF880E4F) else Color(0xFFF8BBD0)
-        "productividad", "productivity" -> if (isDark) Color(0xFF1A237E) else Color(0xFFE8EAF6)
-        "nutrición", "nutrition" -> if (isDark) Color(0xFF33691E) else Color(0xFFDCEDC8)
-        "sueño", "sleep" -> if (isDark) Color(0xFF4A148C) else Color(0xFFE1BEE7)
-        "arte y creatividad", "art" -> if (isDark) Color(0xFFF57F17) else Color(0xFFFFF9C4)
-        "finanzas", "finance" -> if (isDark) Color(0xFF1B5E20) else Color(0xFFC8E6C9)
-        "salud mental" -> if (isDark) Color(0xFF263238) else Color(0xFFCFD8DC)
-        else -> if (isDark) Color(0xFF004D40) else Color(0xFFE0F7FA)
+        "hidratación", "hydration" -> if (isDark) CategoryHydrationDark else CategoryHydrationLight
+        "aprendizaje", "learning" -> if (isDark) CategoryLearningDark else CategoryLearningLight
+        "ejercicio", "fitness" -> if (isDark) CategoryFitnessDark else CategoryFitnessLight
+        "mindfulness" -> if (isDark) CategoryMindfulnessDark else CategoryMindfulnessLight
+        "productividad", "productivity" -> if (isDark) CategoryProductivityDark else CategoryProductivityLight
+        "nutrición", "nutrition" -> if (isDark) CategoryNutritionDark else CategoryNutritionLight
+        "sueño", "sleep" -> if (isDark) CategorySleepDark else CategorySleepLight
+        "arte y creatividad", "art" -> if (isDark) CategoryArtDark else CategoryArtLight
+        "finanzas", "finance" -> if (isDark) CategoryFinanceDark else CategoryFinanceLight
+        "salud mental" -> if (isDark) CategoryMentalDark else CategoryMentalLight
+        else -> if (isDark) CategoryHydrationDark else CategoryHydrationLight
     }
 }
 
@@ -178,7 +214,12 @@ fun getCategoryBgColor(category: String): Color {
  * HabitItemCard es la tarjeta individual para cada hábito o micro hábito en la lista del Rastreador.
  *
  * - **¿Para qué sirve?** Muestra el estado del hábito, etiquetas, controles de completado y botones de edición/borrado.
- * - **¿Cómo funciona?** Soporta hábitos progresivos, temporizados y con checkbox simple, además de acciones directas.
+ * - **¿Cómo funciona?**
+ *   1. Dibuja el icono de la categoría (o el rayo distintivo si es un micro hábito).
+ *   2. Despliega título, subtítulo descriptivo y chips de etiquetas.
+ *   3. En modo lectura, renderiza barra de progreso, botón temporizador o checkbox interactivo.
+ *   4. En modo edición (`isEditMode`), expone los botones de modificar y eliminar.
+ * - **¿Qué pasa si lo quitamos?** No se podrían visualizar ni manipular los hábitos en el dashboard principal.
  */
 @Composable
 fun HabitItemCard(
@@ -213,7 +254,7 @@ fun HabitItemCard(
                 .padding(14.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Círculo con ícono de categoría o micro hábito
+            // Contenedor circular con el icono de categoría o rayo para micro hábitos
             Box(
                 modifier = Modifier
                     .size(46.dp)
@@ -230,7 +271,7 @@ fun HabitItemCard(
 
             Spacer(modifier = Modifier.width(12.dp))
 
-            // Detalles del hábito
+            // Textos informativos y etiquetas del hábito
             Column(
                 modifier = Modifier.weight(1f)
             ) {
@@ -244,6 +285,7 @@ fun HabitItemCard(
                         fontWeight = FontWeight.Bold,
                         color = TextDark
                     )
+                    // Insignia distintiva para micro hábitos de menos de 2 minutos
                     if (habit.isMicroHabit) {
                         Box(
                             modifier = Modifier
@@ -271,13 +313,13 @@ fun HabitItemCard(
 
                 Spacer(modifier = Modifier.height(6.dp))
 
-                // Etiquetas / Chips
+                // Fila de etiquetas (Chips) del hábito
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     habit.tags.take(3).forEach { tag ->
-                        val chipBg = if (isDark) Color(0xFF2C2C2C) else Color(0xFFF1F3F4)
+                        val chipBg = if (isDark) ChipBackgroundDark else ChipBackgroundLight
                         val chipTextColor = if (isDark) Color.White else TextDark
 
                         Box(
@@ -298,7 +340,7 @@ fun HabitItemCard(
 
             Spacer(modifier = Modifier.width(8.dp))
 
-            // Modo edición con botones de editar y eliminar
+            // Modo edición: Botones de editar y borrar
             if (isEditMode) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     if (onEditHabit != null) {
@@ -322,14 +364,14 @@ fun HabitItemCard(
                             Icon(
                                 imageVector = Icons.Outlined.DeleteOutline,
                                 contentDescription = "Eliminar",
-                                tint = Color(0xFFE53935),
+                                tint = DangerRed,
                                 modifier = Modifier.size(20.dp)
                             )
                         }
                     }
                 }
             } else {
-                // Control normal de Progreso / Checkbox
+                // Modo normal: Controles de avance progresivo, temporizado o checkbox
                 Column(
                     horizontalAlignment = Alignment.End,
                     verticalArrangement = Arrangement.Center
@@ -350,14 +392,14 @@ fun HabitItemCard(
                                 .clip(RoundedCornerShape(4.dp))
                                 .clickable { onToggleComplete(habit) },
                             color = MaterialTheme.colorScheme.primary,
-                            trackColor = if (isDark) Color(0xFF303030) else Color(0xFFE0E0E0),
+                            trackColor = if (isDark) BorderTrackDark else BorderGrayLight,
                             strokeCap = StrokeCap.Round
                         )
                     } else if (habit.timeOrDuration.isNotEmpty() && habit.timeOrDuration.contains("Min")) {
                         Box(
                             modifier = Modifier
                                 .size(36.dp)
-                                .background(if (habit.isCompleted) MaterialTheme.colorScheme.primary else Color(0xFFFF9800), CircleShape)
+                                .background(if (habit.isCompleted) MaterialTheme.colorScheme.primary else TimerOrange, CircleShape)
                                 .clickable { onToggleComplete(habit) },
                             contentAlignment = Alignment.Center
                         ) {
@@ -374,7 +416,7 @@ fun HabitItemCard(
                                 .size(36.dp)
                                 .border(
                                     width = 2.dp,
-                                    color = if (habit.isCompleted) MaterialTheme.colorScheme.primary else if (isDark) Color(0xFF505050) else Color(0xFFD0D0D0),
+                                    color = if (habit.isCompleted) MaterialTheme.colorScheme.primary else if (isDark) BorderInactiveDark else BorderInactiveLight,
                                     shape = CircleShape
                                 )
                                 .background(
@@ -405,7 +447,11 @@ fun HabitItemCard(
 // ============================================================================
 
 /**
- * HabitHistoryItemRow representa cada fila de historial en la parte inferior.
+ * HabitHistoryItemRow representa cada fila de historial de cumplimiento.
+ *
+ * - **¿Para qué sirve?** Muestra el registro histórico de un hábito completado con su fecha correspondiente.
+ * - **¿Cómo funciona?** Dibuja una fila horizontal con check verde o gris adaptable y etiqueta temporal.
+ * - **¿Qué pasa si lo quitamos?** La sección inferior de historial no tendría filas de datos renderizables.
  */
 @Composable
 fun HabitHistoryItemRow(
@@ -430,7 +476,7 @@ fun HabitHistoryItemRow(
                 modifier = Modifier
                     .size(28.dp)
                     .background(
-                        color = if (item.isCompleted) Color(0xFF26A69A) else if (isDark) Color(0xFF383838) else Color(0xFFE0E0E0),
+                        color = if (item.isCompleted) SecondaryTeal else if (isDark) BorderGrayDark else BorderGrayLight,
                         shape = CircleShape
                     ),
                 contentAlignment = Alignment.Center
@@ -465,7 +511,11 @@ fun HabitHistoryItemRow(
 // ============================================================================
 
 /**
- * MascotBannerCard muestra a la mascota Octo celebrando el progreso del usuario.
+ * MascotBannerCard muestra a la mascota Octo felicitando al usuario por su progreso.
+ *
+ * - **¿Para qué sirve?** Gamifica la experiencia y motiva la constancia con refuerzo positivo.
+ * - **¿Cómo funciona?** Renderiza la ilustración de Octo desde GitHub usando Coil y un botón de interacción.
+ * - **¿Qué pasa si lo quitamos?** Se perdería el componente de mascota que refuerza la identidad de HabitOcto.
  */
 @Composable
 fun MascotBannerCard(
@@ -531,6 +581,10 @@ fun MascotBannerCard(
 
 /**
  * NewHabitButtonCard es el botón interactivo para abrir el formulario de hábitos.
+ *
+ * - **¿Para qué sirve?** Brinda un acceso visible y directo para crear un hábito o micro hábito.
+ * - **¿Cómo funciona?** Tarjeta clicable con icono de suma en verde corporativo y texto claro.
+ * - **¿Qué pasa si lo quitamos?** El usuario no tendría el botón principal para agregar nuevos hábitos en la pantalla.
  */
 @Composable
 fun NewHabitButtonCard(onClick: () -> Unit) {
@@ -541,7 +595,7 @@ fun NewHabitButtonCard(onClick: () -> Unit) {
             .clickable { onClick() },
         shape = RoundedCornerShape(20.dp),
         colors = CardDefaults.cardColors(containerColor = CardWhite),
-        border = androidx.compose.foundation.BorderStroke(1.dp, if (isDark) Color(0xFF383838) else Color(0xFFE0E0E0)),
+        border = androidx.compose.foundation.BorderStroke(1.dp, if (isDark) BorderGrayDark else BorderGrayLight),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
     ) {
         Column(
@@ -580,7 +634,11 @@ fun NewHabitButtonCard(onClick: () -> Unit) {
 // ============================================================================
 
 /**
- * WeeklyProgressCard muestra los días de la semana con círculos de completado.
+ * WeeklyProgressCard muestra el cumplimiento de los 7 días de la semana.
+ *
+ * - **¿Para qué sirve?** Ofrece una vista rápida de la consistencia semanal del usuario.
+ * - **¿Cómo funciona?** Dibuja los días (L, M, M, J, V, S, D) con indicadores circulares activos o inactivos.
+ * - **¿Qué pasa si lo quitamos?** Se eliminaría el indicador semanal resumido del dashboard.
  */
 @Composable
 fun WeeklyProgressCard() {
@@ -621,7 +679,7 @@ fun WeeklyProgressCard() {
                             modifier = Modifier
                                 .size(32.dp)
                                 .background(
-                                    color = if (completed[index]) MaterialTheme.colorScheme.primary else if (isDark) Color(0xFF383838) else Color(0xFFE0E0E0),
+                                    color = if (completed[index]) MaterialTheme.colorScheme.primary else if (isDark) BorderGrayDark else BorderGrayLight,
                                     shape = CircleShape
                                 ),
                             contentAlignment = Alignment.Center

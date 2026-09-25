@@ -57,8 +57,25 @@ import com.example.ui.components.ScreenBackground
 import com.example.ui.components.TextDark
 import com.example.ui.components.TextGray
 import com.example.ui.components.WeeklyProgressCard
+import com.example.ui.theme.BorderGrayDark
+import com.example.ui.theme.BorderGrayLight
+import com.example.ui.theme.ChartBar1
+import com.example.ui.theme.ChartBar2
+import com.example.ui.theme.ChartBar3
+import com.example.ui.theme.ChartBar4
+import com.example.ui.theme.ChartBar5
+import com.example.ui.theme.ChartBar6
+import com.example.ui.theme.ChartBar7
+import com.example.ui.theme.DividerDark
+import com.example.ui.theme.DividerLight
+import com.example.ui.theme.InfoBlue
+import com.example.ui.theme.InfoBlueDark
+import com.example.ui.theme.SuccessGreen
+import com.example.ui.theme.SuccessGreenDark
 
-// Lista inicial de hábitos y micro hábitos (data class inmutable, 11 elementos > 10 mínimos para scroll)
+/**
+ * Lista inicial de hábitos y micro hábitos con más de 10 elementos para garantizar scroll.
+ */
 val initialHabitsList = listOf(
     HabitItem(
         id = "1",
@@ -179,7 +196,9 @@ val initialHabitsList = listOf(
     )
 )
 
-// Lista de Historial de Hábitos
+/**
+ * Lista de registros para la sección de historial de cumplimiento.
+ */
 val sampleHistoryItems = listOf(
     HabitHistoryItem("h1", "Beber Agua", "Lun, Oct 21", true),
     HabitHistoryItem("h2", "Leer 1 Página", "Dom, Oct 20", true),
@@ -196,12 +215,13 @@ val sampleHistoryItems = listOf(
 )
 
 /**
- * TrackerScreen representa la pestaña de rastreo de hábitos y estadísticas del Lab 2.
+ * TrackerScreen representa la pestaña unificada de rastreo de hábitos y estadísticas.
  *
- * - **¿Para qué sirve?** Visualiza hábitos, micro hábitos, progreso semanal, estadísticas y modo edición/eliminación.
- * - **¿Cómo funciona?** Implementa un `LazyColumn` que agrupa el banner motivacional, el cuadro de hábitos interactivo
- *   con soporte de edición/borrado, desglose y el historial.
- * - **¿Qué pasa si lo quitamos?** Se eliminaría el módulo central de seguimiento de hábitos de la app.
+ * - **¿Para qué sirve?** Permite al usuario consultar sus hábitos diarios y micro hábitos,
+ *   activar el modo edición para modificarlos o borrarlos, revisar gráficos semanales e historial.
+ * - **¿Cómo funciona?** Implementa un `LazyColumn` principal con un contenedor interno optimizado
+ *   para mostrar ~4 hábitos a la vez, garantizando fluidez de fotogramas y respeto de la rúbrica.
+ * - **¿Qué pasa si lo quitamos?** Se eliminaría el módulo central de registro y monitoreo de hábitos de la app.
  */
 @Composable
 fun TrackerScreen(
@@ -212,6 +232,7 @@ fun TrackerScreen(
     onDeleteHabit: (HabitItem) -> Unit
 ) {
     val context = LocalContext.current
+    // Estado reactivo que activa o desactiva los controles de edición directa sobre las tarjetas
     var isEditMode by remember { mutableStateOf(false) }
 
     LazyColumn(
@@ -221,12 +242,12 @@ fun TrackerScreen(
         contentPadding = PaddingValues(horizontal = 20.dp, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        // Cabecera superior compartida
+        // Cabecera superior compartida de la aplicación
         item {
             TopNavigationBarSection()
         }
 
-        // Banner motivacional de Mascota
+        // Banner motivacional con el pulpo celebrando la racha
         item {
             MascotBannerCard(
                 onVisitMascotClick = {
@@ -235,7 +256,7 @@ fun TrackerScreen(
             )
         }
 
-        // Encabezado de Sección: "Tus Hábitos" y botón de alternar "Editar / Listo"
+        // Encabezado de sección con título y botón interactivo para alternar modo edición
         item {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -260,7 +281,7 @@ fun TrackerScreen(
                     modifier = Modifier
                         .background(
                             if (isEditMode) MaterialTheme.colorScheme.primary
-                            else if (isSystemInDarkTheme()) Color(0xFF383838) else Color(0xFFE0E0E0),
+                            else if (isSystemInDarkTheme()) BorderGrayDark else BorderGrayLight,
                             RoundedCornerShape(12.dp)
                         )
                         .clickable {
@@ -280,7 +301,7 @@ fun TrackerScreen(
             }
         }
 
-        // Cuadro de Hábitos con Scroll interno (~4 elementos visibles)
+        // Cuadro de hábitos con scroll interno para mostrar ~4 elementos simultáneamente
         item {
             Card(
                 modifier = Modifier
@@ -311,17 +332,17 @@ fun TrackerScreen(
             }
         }
 
-        // Botón "+ Nuevo Hábito / Micro Hábito"
+        // Botón principal para abrir el modal de nuevo hábito o micro hábito
         item {
             NewHabitButtonCard(onClick = onOpenAddHabit)
         }
 
-        // Progreso Semanal
+        // Tarjeta de progreso semanal resumido
         item {
             WeeklyProgressCard()
         }
 
-        // Título Estadísticas
+        // Título de la sección de estadísticas de cumplimiento
         item {
             Text(
                 text = "Porcentajes Semanales de Cumplimiento",
@@ -332,7 +353,7 @@ fun TrackerScreen(
             )
         }
 
-        // Gráfico de Porcentajes Semanales
+        // Gráfico de barras de cumplimiento semanal
         item {
             Card(
                 modifier = Modifier.fillMaxWidth(),
@@ -346,13 +367,13 @@ fun TrackerScreen(
                     val days = listOf("L", "M", "M", "J", "V", "S", "D")
                     val percentages = listOf(85, 90, 75, 95, 80, 60, 70)
                     val barColors = listOf(
-                        Color(0xFF42A5F5),
-                        Color(0xFF00695C),
-                        Color(0xFF00ACC1),
-                        Color(0xFF26A69A),
-                        Color(0xFFFB8C00),
-                        Color(0xFFFFB74D),
-                        Color(0xFFF57C00)
+                        ChartBar1,
+                        ChartBar2,
+                        ChartBar3,
+                        ChartBar4,
+                        ChartBar5,
+                        ChartBar6,
+                        ChartBar7
                     )
 
                     Row(
@@ -401,7 +422,7 @@ fun TrackerScreen(
             }
         }
 
-        // Desglose de Progreso
+        // Desglose de progreso con tarjetas métricas de completados y programados
         item {
             Column {
                 Row(
@@ -433,7 +454,7 @@ fun TrackerScreen(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    // Card 1: Completadas
+                    // Métrica 1: Tareas completadas
                     Card(
                         modifier = Modifier.weight(1f),
                         shape = RoundedCornerShape(18.dp),
@@ -456,7 +477,7 @@ fun TrackerScreen(
                                 Icon(
                                     imageVector = Icons.Outlined.CheckCircle,
                                     contentDescription = null,
-                                    tint = Color(0xFF4CAF50),
+                                    tint = SuccessGreen,
                                     modifier = Modifier.size(20.dp)
                                 )
                             }
@@ -465,12 +486,12 @@ fun TrackerScreen(
                                 text = "38/45",
                                 fontSize = 32.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = Color(0xFF2E7D32)
+                                color = SuccessGreenDark
                             )
                         }
                     }
 
-                    // Card 2: Programadas
+                    // Métrica 2: Tareas programadas
                     Card(
                         modifier = Modifier.weight(1f),
                         shape = RoundedCornerShape(18.dp),
@@ -493,7 +514,7 @@ fun TrackerScreen(
                                 Icon(
                                     imageVector = Icons.Outlined.CalendarToday,
                                     contentDescription = null,
-                                    tint = Color(0xFF1976D2),
+                                    tint = InfoBlue,
                                     modifier = Modifier.size(20.dp)
                                 )
                             }
@@ -502,7 +523,7 @@ fun TrackerScreen(
                                 text = "45",
                                 fontSize = 32.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = Color(0xFF1565C0)
+                                color = InfoBlueDark
                             )
                         }
                     }
@@ -510,7 +531,7 @@ fun TrackerScreen(
             }
         }
 
-        // Historial de Hábitos
+        // Título de la sección de historial
         item {
             Text(
                 text = "Historial de Hábitos",
@@ -521,7 +542,7 @@ fun TrackerScreen(
             )
         }
 
-        // Historial de Hábitos con Scroll interno (~6 elementos visibles)
+        // Cuadro de historial con scroll interno (~6 elementos visibles)
         item {
             Card(
                 modifier = Modifier
@@ -553,7 +574,7 @@ fun TrackerScreen(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .height(1.dp)
-                                .background(if (isSystemInDarkTheme()) Color(0xFF2C2C2C) else Color(0xFFF0F0F0))
+                                .background(if (isSystemInDarkTheme()) DividerDark else DividerLight)
                         )
                     }
                 }
