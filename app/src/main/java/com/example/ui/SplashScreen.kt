@@ -33,8 +33,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import coil.compose.AsyncImage
 import com.example.R
+import com.example.ui.components.HabitImage
 import com.example.ui.theme.DarkTealBackground
 import com.example.ui.theme.DarkTealText
 import com.example.ui.theme.DeepDarkTeal
@@ -92,9 +92,8 @@ fun SplashScreen(
                     .padding(8.dp),
                 contentAlignment = Alignment.Center
             ) {
-                AsyncImage(
+                HabitImage(
                     model = "https://raw.githubusercontent.com/garzzaro/Proyecto-Plataformas-Moviles/feature/lab2-lazy-list/app/src/main/res/drawable/pulpo.avif",
-                    placeholder = painterResource(id = R.drawable.ic_launcher_background),
                     contentDescription = "Mascota Pulpo HabitOcto",
                     modifier = Modifier
                         .size(144.dp)

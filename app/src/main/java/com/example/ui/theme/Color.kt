@@ -1,6 +1,19 @@
 package com.example.ui.theme
 
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
+
+/**
+ * Evaluador reactivo de modo oscuro activo en la jerarquía de Compose.
+ * Comprueba la luminosidad de la superficie del tema actual, funcionando
+ * correctamente tanto si el tema oscuro proviene del sistema de Android
+ * como si fue alternado manualmente desde la aplicación.
+ */
+val isAppInDarkTheme: Boolean
+    @Composable
+    get() = MaterialTheme.colorScheme.surface.luminance() < 0.5f
 
 /**
  * Color.kt centraliza todos los tokens y definiciones cromáticas de la aplicación HabitOcto.

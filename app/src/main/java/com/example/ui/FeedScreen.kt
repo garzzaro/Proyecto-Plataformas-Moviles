@@ -53,8 +53,8 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import coil.compose.AsyncImage
 import com.example.R
+import com.example.ui.components.HabitImage
 import com.example.TopNavigationBarSection
 import com.example.model.FeedPostItem
 import com.example.ui.components.CardWhite
@@ -224,9 +224,8 @@ fun FeedScreen(
                                 .height(160.dp)
                                 .clip(RoundedCornerShape(12.dp))
                         ) {
-                            AsyncImage(
+                            HabitImage(
                                 model = attachedImageUrl,
-                                placeholder = painterResource(id = R.drawable.ic_launcher_background),
                                 contentDescription = "Imagen adjunta",
                                 modifier = Modifier.fillMaxSize(),
                                 contentScale = ContentScale.Crop
@@ -399,9 +398,8 @@ fun FeedPostCard(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                AsyncImage(
+                HabitImage(
                     model = post.authorAvatarUrl,
-                    placeholder = painterResource(id = R.drawable.ic_launcher_background),
                     contentDescription = "Avatar de ${post.authorName}",
                     modifier = Modifier
                         .size(44.dp)
@@ -456,9 +454,8 @@ fun FeedPostCard(
 
             // Imagen ilustrativa si la publicación incluye foto
             if (post.postImageUrl != null) {
-                AsyncImage(
+                HabitImage(
                     model = post.postImageUrl,
-                    placeholder = painterResource(id = R.drawable.ic_launcher_background),
                     contentDescription = "Imagen del post",
                     modifier = Modifier
                         .fillMaxWidth()

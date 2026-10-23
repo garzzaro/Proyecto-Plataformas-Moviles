@@ -3,6 +3,7 @@ package com.example
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
+import com.example.ui.theme.isAppInDarkTheme
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.background
@@ -65,15 +66,18 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import coil.compose.AsyncImage
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.model.FeedPostItem
 import com.example.model.HabitItem
 import com.example.ui.AddHabitScreen
 import com.example.ui.FeedScreen
 import com.example.ui.SplashScreen
 import com.example.ui.TrackerScreen
+import com.example.ui.components.HabitImage
 import com.example.ui.initialFeedPosts
 import com.example.ui.initialHabitsList
+import com.example.viewmodel.MainViewModel
 import com.example.ui.theme.BadgeOrange
 import com.example.ui.theme.CardAccuracyDark
 import com.example.ui.theme.CardAccuracyLight
@@ -107,17 +111,11 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
-            var isDarkModeManual by remember { mutableStateOf<Boolean?>(null) }
-            val systemInDark = isSystemInDarkTheme()
-            val effectiveDark = isDarkModeManual ?: systemInDark
+            val viewModel: MainViewModel = viewModel()
+            val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
-            MyApplicationTheme(darkTheme = effectiveDark) {
-                HabitOctoMainApp(
-                    isDarkMode = effectiveDark,
-                    onToggleDarkMode = {
-                        isDarkModeManual = !effectiveDark
-                    }
-                )
+            MyApplicationTheme(darkTheme = uiState.isDarkMode) {
+                HabitOctoMainApp(viewModel = viewModel)
             }
         }
     }
@@ -127,22 +125,19 @@ class MainActivity : ComponentActivity() {
  * HabitOctoMainApp es el contenedor principal de la aplicación.
  *
  * - **¿Para qué sirve?** Controla el Scaffold, la barra de navegación inferior (Tracker, Feed, Profile),
- *   y gestiona los estados compartidos de hábitos, micro hábitos, feed con imágenes y modo oscuro.
- * - **¿Cómo funciona?** Guarda listas reactivas (`habitsList`, `feedPostsList`) y modales de edición/creación.
+ *   y gestiona los estados compartidos de hábitos, micro hábitos, feed con imágenes y modo oscuro a través de [MainViewModel].
+ * - **¿Cómo funciona?** Recibe [MainViewModel] y observa su `uiState` para coordinar el contenido de las pantallas y modales.
  * - **¿Qué pasa si lo quitamos?** Se perdería la estructura de navegación y la coordinación de pantallas.
  */
 @Composable
 fun HabitOctoMainApp(
-    isDarkMode: Boolean,
-    onToggleDarkMode: () -> Unit
+    viewModel: MainViewModel = viewModel(),
+    isDarkMode: Boolean? = null,
+    onToggleDarkMode: (() -> Unit)? = null
 ) {
-    var selectedTab by remember { mutableIntStateOf(0) }
-    val habitsList = remember { mutableStateListOf<HabitItem>().apply { addAll(initialHabitsList) } }
-    val feedPostsList = remember { mutableStateListOf<FeedPostItem>().apply { addAll(initialFeedPosts) } }
-
-    var isAddHabitDialogOpen by remember { mutableStateOf(false) }
-    var habitEditingTarget by remember { mutableStateOf<HabitItem?>(null) }
-
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val activeDarkMode = isDarkMode ?: uiState.isDarkMode
+    val toggleDarkModeAction = onToggleDarkMode ?: { viewModel.toggleDarkMode() }
     val context = LocalContext.current
 
     Scaffold(
@@ -157,13 +152,13 @@ fun HabitOctoMainApp(
                 )
             ) {
                 val selectedColor = MaterialTheme.colorScheme.onBackground
-                val unselectedColor = if (isDarkMode) TextGrayDark else TextGrayLight
+                val unselectedColor = if (activeDarkMode) TextGrayDark else TextGrayLight
                 val indicatorBg = MaterialTheme.colorScheme.secondary
 
                 // PESTAÑA 1: Tracker
                 NavigationBarItem(
-                    selected = selectedTab == 0,
-                    onClick = { selectedTab = 0 },
+                    selected = uiState.selectedTab == 0,
+                    onClick = { viewModel.selectTab(0) },
                     icon = {
                         Icon(
                             imageVector = Icons.Outlined.Adjust,
@@ -174,7 +169,7 @@ fun HabitOctoMainApp(
                         Text(
                             text = "Tracker",
                             style = MaterialTheme.typography.labelSmall,
-                            fontWeight = if (selectedTab == 0) FontWeight.Bold else FontWeight.Medium
+                            fontWeight = if (uiState.selectedTab == 0) FontWeight.Bold else FontWeight.Medium
                         )
                     },
                     colors = NavigationBarItemDefaults.colors(
@@ -188,8 +183,8 @@ fun HabitOctoMainApp(
 
                 // PESTAÑA 2: Feed
                 NavigationBarItem(
-                    selected = selectedTab == 1,
-                    onClick = { selectedTab = 1 },
+                    selected = uiState.selectedTab == 1,
+                    onClick = { viewModel.selectTab(1) },
                     icon = {
                         Icon(
                             imageVector = Icons.Outlined.Group,
@@ -200,7 +195,7 @@ fun HabitOctoMainApp(
                         Text(
                             text = "Feed",
                             style = MaterialTheme.typography.labelSmall,
-                            fontWeight = if (selectedTab == 1) FontWeight.Bold else FontWeight.Medium
+                            fontWeight = if (uiState.selectedTab == 1) FontWeight.Bold else FontWeight.Medium
                         )
                     },
                     colors = NavigationBarItemDefaults.colors(
@@ -214,8 +209,8 @@ fun HabitOctoMainApp(
 
                 // PESTAÑA 3: Profile
                 NavigationBarItem(
-                    selected = selectedTab == 2,
-                    onClick = { selectedTab = 2 },
+                    selected = uiState.selectedTab == 2,
+                    onClick = { viewModel.selectTab(2) },
                     icon = {
                         Icon(
                             imageVector = Icons.Default.Person,
@@ -226,7 +221,7 @@ fun HabitOctoMainApp(
                         Text(
                             text = "Profile",
                             style = MaterialTheme.typography.labelSmall,
-                            fontWeight = if (selectedTab == 2) FontWeight.Bold else FontWeight.Medium
+                            fontWeight = if (uiState.selectedTab == 2) FontWeight.Bold else FontWeight.Medium
                         )
                     },
                     colors = NavigationBarItemDefaults.colors(
@@ -245,69 +240,33 @@ fun HabitOctoMainApp(
                 .fillMaxSize()
                 .padding(innerPadding)
         ) {
-            when (selectedTab) {
+            when (uiState.selectedTab) {
                 0 -> {
                     TrackerScreen(
-                        habits = habitsList,
+                        habits = uiState.habits,
                         onToggleHabit = { habitToToggle ->
-                            val index = habitsList.indexOfFirst { it.id == habitToToggle.id }
-                            if (index != -1) {
-                                val current = habitsList[index]
-                                if (current.isProgressive) {
-                                    val newProg = if (current.currentProgress >= current.maxProgress) 0 else current.currentProgress + 1
-                                    habitsList[index] = current.copy(
-                                        currentProgress = newProg,
-                                        isCompleted = newProg >= current.maxProgress
-                                    )
-                                } else {
-                                    habitsList[index] = current.copy(isCompleted = !current.isCompleted)
-                                }
-                            }
+                            viewModel.toggleHabit(habitToToggle)
                         },
                         onOpenAddHabit = {
-                            habitEditingTarget = null
-                            isAddHabitDialogOpen = true
+                            viewModel.openAddHabitDialog()
                         },
                         onEditHabit = { habit ->
-                            habitEditingTarget = habit
-                            isAddHabitDialogOpen = true
+                            viewModel.openEditHabitDialog(habit)
                         },
                         onDeleteHabit = { habitToDelete ->
-                            habitsList.removeAll { it.id == habitToDelete.id }
+                            viewModel.deleteHabit(habitToDelete)
                             Toast.makeText(context, "Hábito '${habitToDelete.title}' eliminado", Toast.LENGTH_SHORT).show()
                         }
                     )
                 }
                 1 -> {
                     FeedScreen(
-                        posts = feedPostsList,
+                        posts = uiState.feedPosts,
                         onToggleLike = { postId ->
-                            val index = feedPostsList.indexOfFirst { it.id == postId }
-                            if (index != -1) {
-                                val current = feedPostsList[index]
-                                val newLiked = !current.isLiked
-                                val newCount = if (newLiked) current.likesCount + 1 else (current.likesCount - 1).coerceAtLeast(0)
-                                feedPostsList[index] = current.copy(
-                                    isLiked = newLiked,
-                                    likesCount = newCount
-                                )
-                            }
+                            viewModel.toggleLike(postId)
                         },
                         onPublishPost = { content, category, imageUrl ->
-                            val newPost = FeedPostItem(
-                                id = "post_${System.currentTimeMillis()}",
-                                authorName = "Alex Rivero (Tú)",
-                                authorAvatarUrl = "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=200",
-                                habitTitle = "Logro personal",
-                                habitCategory = category,
-                                content = content,
-                                postImageUrl = imageUrl,
-                                timeAgo = "Justo ahora",
-                                likesCount = 0,
-                                isLiked = false,
-                                streakCount = 1
-                            )
-                            feedPostsList.add(0, newPost)
+                            viewModel.publishPost(content, category, imageUrl)
                             Toast.makeText(context, "¡Publicado en la comunidad!", Toast.LENGTH_SHORT).show()
                         }
                     )
@@ -324,8 +283,8 @@ fun HabitOctoMainApp(
                         item { ProfileHeaderSection() }
                         item {
                             DarkModeToggleSection(
-                                isDarkMode = isDarkMode,
-                                onToggleDarkMode = onToggleDarkMode
+                                isDarkMode = activeDarkMode,
+                                onToggleDarkMode = toggleDarkModeAction
                             )
                         }
                         item { PersonalStatsSection() }
@@ -335,27 +294,17 @@ fun HabitOctoMainApp(
             }
 
             // Diálogo unificado para Añadir y Modificar Hábitos y Micro Hábitos
-            if (isAddHabitDialogOpen) {
+            if (uiState.isAddHabitDialogOpen) {
                 AddHabitScreen(
-                    habitToEdit = habitEditingTarget,
+                    habitToEdit = uiState.habitEditingTarget,
                     onDismiss = {
-                        isAddHabitDialogOpen = false
-                        habitEditingTarget = null
+                        viewModel.closeAddHabitDialog()
                     },
                     onSaveHabit = { savedHabit ->
-                        val index = habitsList.indexOfFirst { it.id == savedHabit.id }
-                        if (index != -1) {
-                            habitsList[index] = savedHabit
-                        } else {
-                            habitsList.add(0, savedHabit)
-                        }
-                        isAddHabitDialogOpen = false
-                        habitEditingTarget = null
+                        viewModel.saveHabit(savedHabit)
                     },
                     onDeleteHabit = { habitToDelete ->
-                        habitsList.removeAll { it.id == habitToDelete.id }
-                        isAddHabitDialogOpen = false
-                        habitEditingTarget = null
+                        viewModel.deleteHabit(habitToDelete)
                     }
                 )
             }
@@ -459,9 +408,8 @@ fun TopNavigationBarSection() {
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            AsyncImage(
+            HabitImage(
                 model = "https://raw.githubusercontent.com/garzzaro/Proyecto-Plataformas-Moviles/feature/lab2-lazy-list/app/src/main/res/drawable/pulpo.avif",
-                placeholder = painterResource(id = R.drawable.ic_launcher_background),
                 contentDescription = "App Logo Avatar",
                 modifier = Modifier
                     .size(38.dp)
@@ -506,7 +454,7 @@ fun ProfileHeaderSection() {
             contentAlignment = Alignment.BottomCenter,
             modifier = Modifier.padding(bottom = 6.dp)
         ) {
-            AsyncImage(
+            HabitImage(
                 model = "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400",
                 contentDescription = "Profile Picture",
                 modifier = Modifier
@@ -543,7 +491,7 @@ fun ProfileHeaderSection() {
         Text(
             text = "Buscador de Hábitos • 28 Días Activo",
             style = MaterialTheme.typography.bodyMedium,
-            color = if (isSystemInDarkTheme()) TextGrayDark else TextGrayLight
+            color = if (isAppInDarkTheme) TextGrayDark else TextGrayLight
         )
     }
 }
@@ -553,7 +501,7 @@ fun ProfileHeaderSection() {
  */
 @Composable
 fun PersonalStatsSection() {
-    val isDark = isSystemInDarkTheme()
+    val isDark = isAppInDarkTheme
     val textGray = if (isDark) TextGrayDark else TextGrayLight
     val iconBg = if (isDark) DarkIconBoxBg else LightIconBoxBg
     val cardStreakBg = if (isDark) CardStreakDark else CardStreakLight
@@ -733,7 +681,7 @@ fun PersonalStatsSection() {
 fun AccountDataSection() {
     val context = LocalContext.current
     var isTwoFactorEnabled by remember { mutableStateOf(true) }
-    val isDark = isSystemInDarkTheme()
+    val isDark = isAppInDarkTheme
     val textGray = if (isDark) TextGrayDark else TextGrayLight
 
     Column(

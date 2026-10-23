@@ -4,7 +4,7 @@ import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.isSystemInDarkTheme
+import com.example.ui.theme.isAppInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -59,7 +59,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import coil.compose.AsyncImage
 import com.example.R
 import com.example.model.HabitHistoryItem
 import com.example.model.HabitItem
@@ -116,7 +115,7 @@ import com.example.ui.theme.TimerOrange
 
 val TextGray: Color
     @Composable
-    get() = if (isSystemInDarkTheme()) TextGrayDark else TextGrayLight
+    get() = if (isAppInDarkTheme) TextGrayDark else TextGrayLight
 
 val ScreenBackground: Color
     @Composable
@@ -132,27 +131,27 @@ val TextDark: Color
 
 val CardStreakBackground: Color
     @Composable
-    get() = if (isSystemInDarkTheme()) CardStreakDark else CardStreakLight
+    get() = if (isAppInDarkTheme) CardStreakDark else CardStreakLight
 
 val NumberStreakColor: Color
     @Composable
-    get() = if (isSystemInDarkTheme()) NumberStreakDark else NumberStreakLight
+    get() = if (isAppInDarkTheme) NumberStreakDark else NumberStreakLight
 
 val SubtitleStreakColor: Color
     @Composable
-    get() = if (isSystemInDarkTheme()) SubtitleStreakDark else SubtitleStreakLight
+    get() = if (isAppInDarkTheme) SubtitleStreakDark else SubtitleStreakLight
 
 val CardAccuracyBackground: Color
     @Composable
-    get() = if (isSystemInDarkTheme()) CardAccuracyDark else CardAccuracyLight
+    get() = if (isAppInDarkTheme) CardAccuracyDark else CardAccuracyLight
 
 val NumberAccuracyColor: Color
     @Composable
-    get() = if (isSystemInDarkTheme()) NumberAccuracyDark else NumberAccuracyLight
+    get() = if (isAppInDarkTheme) NumberAccuracyDark else NumberAccuracyLight
 
 val SubtitleAccuracyColor: Color
     @Composable
-    get() = if (isSystemInDarkTheme()) SubtitleAccuracyDark else SubtitleAccuracyLight
+    get() = if (isAppInDarkTheme) SubtitleAccuracyDark else SubtitleAccuracyLight
 
 // ============================================================================
 // FUNCIONES DE UTILIDAD PARA HÁBITOS
@@ -190,7 +189,7 @@ fun getCategoryIcon(category: String): ImageVector {
  */
 @Composable
 fun getCategoryBgColor(category: String): Color {
-    val isDark = isSystemInDarkTheme()
+    val isDark = isAppInDarkTheme
     return when (category.lowercase()) {
         "hidratación", "hydration" -> if (isDark) CategoryHydrationDark else CategoryHydrationLight
         "aprendizaje", "learning" -> if (isDark) CategoryLearningDark else CategoryLearningLight
@@ -232,7 +231,7 @@ fun HabitItemCard(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
-    val isDark = isSystemInDarkTheme()
+    val isDark = isAppInDarkTheme
 
     Card(
         modifier = modifier
@@ -459,7 +458,7 @@ fun HabitHistoryItemRow(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val isDark = isSystemInDarkTheme()
+    val isDark = isAppInDarkTheme
     Row(
         modifier = modifier
             .fillMaxWidth()
@@ -527,9 +526,8 @@ fun MascotBannerCard(
             .padding(vertical = 8.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        AsyncImage(
+        HabitImage(
             model = "https://raw.githubusercontent.com/garzzaro/Proyecto-Plataformas-Moviles/feature/lab2-lazy-list/app/src/main/res/drawable/pulpo.avif",
-            placeholder = painterResource(id = R.drawable.ic_launcher_background),
             contentDescription = "Pulpo HabitOcto",
             modifier = Modifier
                 .size(110.dp)
@@ -588,7 +586,7 @@ fun MascotBannerCard(
  */
 @Composable
 fun NewHabitButtonCard(onClick: () -> Unit) {
-    val isDark = isSystemInDarkTheme()
+    val isDark = isAppInDarkTheme
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -642,7 +640,7 @@ fun NewHabitButtonCard(onClick: () -> Unit) {
  */
 @Composable
 fun WeeklyProgressCard() {
-    val isDark = isSystemInDarkTheme()
+    val isDark = isAppInDarkTheme
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(20.dp),

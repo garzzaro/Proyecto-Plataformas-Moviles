@@ -2,6 +2,7 @@ package com.example.ui
 
 import android.widget.Toast
 import androidx.compose.foundation.background
+import com.example.ui.theme.isAppInDarkTheme
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
@@ -43,8 +44,8 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import coil.compose.AsyncImage
 import com.example.R
+import com.example.ui.components.HabitImage
 import com.example.TopNavigationBarSection
 import com.example.model.HabitHistoryItem
 import com.example.model.HabitItem
@@ -281,7 +282,7 @@ fun TrackerScreen(
                     modifier = Modifier
                         .background(
                             if (isEditMode) MaterialTheme.colorScheme.primary
-                            else if (isSystemInDarkTheme()) BorderGrayDark else BorderGrayLight,
+                            else if (isAppInDarkTheme) BorderGrayDark else BorderGrayLight,
                             RoundedCornerShape(12.dp)
                         )
                         .clickable {
@@ -437,9 +438,8 @@ fun TrackerScreen(
                         color = TextDark
                     )
 
-                    AsyncImage(
+                    HabitImage(
                         model = "https://raw.githubusercontent.com/garzzaro/Proyecto-Plataformas-Moviles/feature/lab2-lazy-list/app/src/main/res/drawable/pulpo.avif",
-                        placeholder = painterResource(id = R.drawable.ic_launcher_background),
                         contentDescription = "Mascota Octo",
                         modifier = Modifier
                             .size(36.dp)
@@ -574,7 +574,7 @@ fun TrackerScreen(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .height(1.dp)
-                                .background(if (isSystemInDarkTheme()) DividerDark else DividerLight)
+                                .background(if (isAppInDarkTheme) DividerDark else DividerLight)
                         )
                     }
                 }

@@ -2,6 +2,7 @@ package com.example.ui
 
 import android.widget.Toast
 import androidx.compose.foundation.background
+import com.example.ui.theme.isAppInDarkTheme
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -55,8 +56,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
-import coil.compose.AsyncImage
 import com.example.R
+import com.example.ui.components.HabitImage
 import com.example.model.HabitItem
 import com.example.ui.components.CardWhite
 import com.example.ui.components.ScreenBackground
@@ -289,7 +290,7 @@ fun AddHabitScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .background(
-                                if (isSystemInDarkTheme()) BorderGrayDark else BorderGrayLight,
+                                if (isAppInDarkTheme) BorderGrayDark else BorderGrayLight,
                                 RoundedCornerShape(12.dp)
                             )
                             .padding(4.dp)
@@ -402,7 +403,7 @@ fun AddHabitScreen(
                         Box(
                             modifier = Modifier
                                 .background(
-                                    if (isSystemInDarkTheme()) SurfaceDarkVariant else SurfaceLightVariant,
+                                    if (isAppInDarkTheme) SurfaceDarkVariant else SurfaceLightVariant,
                                     RoundedCornerShape(8.dp)
                                 )
                                 .padding(horizontal = 12.dp, vertical = 8.dp)
@@ -430,7 +431,7 @@ fun AddHabitScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .background(
-                                if (isSystemInDarkTheme()) SurfaceDarkVariant else SurfaceLightVariant,
+                                if (isAppInDarkTheme) SurfaceDarkVariant else SurfaceLightVariant,
                                 RoundedCornerShape(12.dp)
                             )
                             .padding(14.dp)
@@ -447,7 +448,7 @@ fun AddHabitScreen(
                     horizontalArrangement = Arrangement.End,
                     verticalAlignment = Alignment.Bottom
                 ) {
-                    val isDark = isSystemInDarkTheme()
+                    val isDark = isAppInDarkTheme
                     Box(
                         modifier = Modifier
                             .background(
@@ -466,9 +467,8 @@ fun AddHabitScreen(
 
                     Spacer(modifier = Modifier.width(8.dp))
 
-                    AsyncImage(
+                    HabitImage(
                         model = "https://raw.githubusercontent.com/garzzaro/Proyecto-Plataformas-Moviles/feature/lab2-lazy-list/app/src/main/res/drawable/pulpo.avif",
-                        placeholder = painterResource(id = R.drawable.ic_launcher_background),
                         contentDescription = "Mascota Octo",
                         modifier = Modifier
                             .size(60.dp)
