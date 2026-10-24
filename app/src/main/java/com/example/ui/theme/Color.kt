@@ -1,79 +1,161 @@
-package com.example.ui.theme // Declara el paquete de la capa de diseño visual (UI Theme)
+package com.example.ui.theme
 
-import androidx.compose.ui.graphics.Color // Importa la clase Color de Jetpack Compose para manejar colores en pantalla
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 
 /**
- * Color.kt alberga todos los tokens y definiciones de colores de la aplicación.
+ * Evaluador reactivo de modo oscuro activo en la jerarquía de Compose.
+ * Comprueba la luminosidad de la superficie del tema actual, funcionando
+ * correctamente tanto si el tema oscuro proviene del sistema de Android
+ * como si fue alternado manualmente desde la aplicación.
+ */
+val isAppInDarkTheme: Boolean
+    @Composable
+    get() = MaterialTheme.colorScheme.surface.luminance() < 0.5f
+
+/**
+ * Color.kt centraliza todos los tokens y definiciones cromáticas de la aplicación HabitOcto.
  *
- * - **¿Para qué sirve?** Almacena de forma centralizada los valores hexadecimales de color para
- *   evitar que estén dispersos (Hardcoded) por todo el código del proyecto.
- * - **¿Cómo funciona?** Crea variables inmutables (`val`) que instancian la clase `Color` de Compose
- *   con su valor ARGB hexadecimal.
- * - **¿Qué pasa si lo quitamos?** Si se elimina este archivo, el proyecto no compilará debido a la falta
- *   de referencias cromáticas para inicializar los temas claro/oscuro y colorear las tarjetas y textos.
+ * - **¿Para qué sirve?** Evita colores literales (hardcoded) en los archivos de interfaz,
+ *   garantizando coherencia visual, facilidad de mantenimiento y soporte de temas claro/oscuro.
+ * - **¿Cómo funciona?** Declara constantes `Color` inmutables con valores ARGB hexadecimales.
+ * - **¿Qué pasa si lo quitamos?** Las pantallas y componentes no podrían resolver sus colores temáticos.
  */
 
-// Colores por defecto del proyecto base (plantilla predeterminada de Compose)
-val Purple80 = Color(0xFFD0BCFF) // Tono lila claro para el tema oscuro por defecto
-val PurpleGrey80 = Color(0xFFCCC2DC) // Gris lila claro por defecto
-val Pink80 = Color(0xFFEFB8C8) // Rosa claro por defecto
+// ============================================================================
+// COLORES BASE Y TEMAS POR DEFECTO
+// ============================================================================
 
-val Purple40 = Color(0xFF6650a4) // Tono lila oscuro para el tema claro por defecto
-val PurpleGrey40 = Color(0xFF625b71) // Gris lila oscuro por defecto
-val Pink40 = Color(0xFF7D5260) // Rosa oscuro por defecto
+val Purple80 = Color(0xFFD0BCFF)
+val PurpleGrey80 = Color(0xFFCCC2DC)
+val Pink80 = Color(0xFFEFB8C8)
+
+val Purple40 = Color(0xFF6650a4)
+val PurpleGrey40 = Color(0xFF625b71)
+val Pink40 = Color(0xFF7D5260)
 
 // ============================================================================
 // COLORES CORPORATIVOS E INSIGNIA DE HABITOCTO
 // ============================================================================
 
-// Color Primario (Teal/Verde Azulado): Aplicado en títulos principales, textos y botones destacados.
-val PrimaryTeal = Color(0xFF00796B) // Color verde azulado oscuro para elementos principales
-
-// Color Secundario (Teal Claro/Acento): Empleado en barras del gráfico, switches activos y bordes de avatares.
-val SecondaryTeal = Color(0xFF26C6DA) // Acento celeste/turquesa brillante para realces
+val PrimaryTeal = Color(0xFF00796B)
+val SecondaryTeal = Color(0xFF26C6DA)
+val DarkTealBackground = Color(0xFF004D40)
+val DeepDarkTeal = Color(0xFF00251A)
+val LightTealAccent = Color(0xFFB2DFDB)
+val DarkTealText = Color(0xFF00363A)
 
 // Fondos Generales de Pantalla
-val ScreenBackgroundLight = Color(0xFFF8F9FA) // Gris muy claro / Off-white (Modo Claro)
-val ScreenBackgroundDark = Color(0xFF121212)  // Gris oscuro / Negro OLED (Modo Oscuro)
+val ScreenBackgroundLight = Color(0xFFF8F9FA)
+val ScreenBackgroundDark = Color(0xFF121212)
 
 // Colores de Texto
-val TextDark = Color(0xFF212121)      // Texto principal oscuro para alta legibilidad en modo claro.
-val TextLight = Color(0xFFEEEEEE)     // Texto principal claro para alta legibilidad en modo oscuro.
-val TextGrayLight = Color(0xFF757575) // Subtítulos/Grises para modo claro.
-val TextGrayDark = Color(0xFFB0BEC5)  // Subtítulos/Grises para modo oscuro.
+val TextDark = Color(0xFF212121)
+val TextLight = Color(0xFFEEEEEE)
+val TextGrayLight = Color(0xFF757575)
+val TextGrayDark = Color(0xFFB0BEC5)
 
 // ============================================================================
-// COLORES ESPECÍFICOS PARA LAS TARJETAS MÓVILES
+// COLORES PARA TARJETAS Y CONTENEDORES
 // ============================================================================
 
-// Paleta de la Tarjeta "Current Streak" (Modo Claro - Naranjas suaves y cafés)
-val CardStreakLight = Color(0xFFFFE0B2) // Fondo naranja pastel
-val NumberStreakLight = Color(0xFF3E2723) // Número marrón oscuro
-val SubtitleStreakLight = Color(0xFFA15D22) // Texto marrón intermedio
+// Tarjeta Racha (Streak)
+val CardStreakLight = Color(0xFFFFE0B2)
+val NumberStreakLight = Color(0xFF3E2723)
+val SubtitleStreakLight = Color(0xFFA15D22)
 
-// Paleta de la Tarjeta "Current Streak" (Modo Oscuro - Tonos naranja apagados y marrones)
-val CardStreakDark = Color(0xFF4E342E) // Fondo marrón oscuro/rojizo
-val NumberStreakDark = Color(0xFFFFCC80) // Número naranja claro brillante
-val SubtitleStreakDark = Color(0xFFFFB74D) // Subtítulo naranja suave
+val CardStreakDark = Color(0xFF4E342E)
+val NumberStreakDark = Color(0xFFFFCC80)
+val SubtitleStreakDark = Color(0xFFFFB74D)
 
-// Paleta de la Tarjeta "Accuracy" (Modo Claro - Lavandas y azules suaves)
-val CardAccuracyLight = Color(0xFFE8EAF6) // Fondo lavanda/azul claro
-val NumberAccuracyLight = Color(0xFF1A237E) // Número azul índigo oscuro
-val SubtitleAccuracyLight = Color(0xFF3F51B5) // Subtítulo azul índigo intermedio
+// Tarjeta Precisión (Accuracy)
+val CardAccuracyLight = Color(0xFFE8EAF6)
+val NumberAccuracyLight = Color(0xFF1A237E)
+val SubtitleAccuracyLight = Color(0xFF3F51B5)
 
-// Paleta de la Tarjeta "Accuracy" (Modo Oscuro - Tonos lavanda oscuros)
-val CardAccuracyDark = Color(0xFF1A237E) // Fondo azul índigo oscuro
-val NumberAccuracyDark = Color(0xFFC5CAE9) // Número lavanda muy claro
-val SubtitleAccuracyDark = Color(0xFF9FA8DA) // Subtítulo lavanda intermedio
+val CardAccuracyDark = Color(0xFF1A237E)
+val NumberAccuracyDark = Color(0xFFC5CAE9)
+val SubtitleAccuracyDark = Color(0xFF9FA8DA)
+
+// Fondos de tarjetas
+val CardWhite = Color.White
+val CardDark = Color(0xFF1E1E1E)
+
+// Insignias y contenedores de iconos
+val BadgeOrange = Color(0xFFFF9800)
+val LightIconBoxBg = Color(0xFFE0F7FA)
+val LightTealBg = Color(0xFFE0F7FA)
+val DarkIconBoxBg = Color(0xFF004D40)
 
 // ============================================================================
-// ELEMENTOS ADICIONALES Y AUXILIARES
+// COLORES DE UI, BORDES, CHIPS Y ESTADOS
 // ============================================================================
 
-val BadgeOrange = Color(0xFFFF9800)    // Color naranja llamativo para la insignia de nivel.
-val LightIconBoxBg = Color(0xFFE0F7FA) // Recuadro de icono azul/verde claro.
-val DarkIconBoxBg = Color(0xFF004D40)  // Recuadro de icono azul/verde oscuro.
+val BorderGrayLight = Color(0xFFE0E0E0)
+val BorderGrayDark = Color(0xFF383838)
+val BorderTrackDark = Color(0xFF303030)
+val BorderInactiveDark = Color(0xFF505050)
+val BorderInactiveLight = Color(0xFFD0D0D0)
 
-// Colores de Tarjetas Normales
-val CardWhite = Color.White        // Fondo blanco de tarjetas en modo claro.
-val CardDark = Color(0xFF1E1E1E)   // Fondo gris oscuro de tarjetas en modo oscuro.
+val SurfaceDarkVariant = Color(0xFF263238)
+val SurfaceLightVariant = Color(0xFFE8EAF6)
+val ChipBackgroundLight = Color(0xFFF1F3F4)
+val ChipBackgroundDark = Color(0xFF2C2C2C)
+val DividerDark = Color(0xFF2C2C2C)
+val DividerLight = Color(0xFFF0F0F0)
+
+val DangerRed = Color(0xFFE53935)
+val SuccessGreen = Color(0xFF4CAF50)
+val SuccessGreenDark = Color(0xFF2E7D32)
+val InfoBlue = Color(0xFF1976D2)
+val InfoBlueDark = Color(0xFF1565C0)
+val LikePink = Color(0xFFE91E63)
+val TimerOrange = Color(0xFFFF9800)
+
+// ============================================================================
+// COLORES PARA CATEGORÍAS (CLARO Y OSCURO)
+// ============================================================================
+
+val CategoryHydrationLight = Color(0xFFE0F7FA)
+val CategoryHydrationDark = Color(0xFF004D40)
+
+val CategoryLearningLight = Color(0xFFF3E5F5)
+val CategoryLearningDark = Color(0xFF311B92)
+
+val CategoryFitnessLight = Color(0xFFFFE0B2)
+val CategoryFitnessDark = Color(0xFFE65100)
+
+val CategoryMindfulnessLight = Color(0xFFF8BBD0)
+val CategoryMindfulnessDark = Color(0xFF880E4F)
+
+val CategoryProductivityLight = Color(0xFFE8EAF6)
+val CategoryProductivityDark = Color(0xFF1A237E)
+
+val CategoryNutritionLight = Color(0xFFDCEDC8)
+val CategoryNutritionDark = Color(0xFF33691E)
+
+val CategorySleepLight = Color(0xFFE1BEE7)
+val CategorySleepDark = Color(0xFF4A148C)
+
+val CategoryArtLight = Color(0xFFFFF9C4)
+val CategoryArtDark = Color(0xFFF57F17)
+
+val CategoryFinanceLight = Color(0xFFC8E6C9)
+val CategoryFinanceDark = Color(0xFF1B5E20)
+
+val CategoryMentalLight = Color(0xFFCFD8DC)
+val CategoryMentalDark = Color(0xFF263238)
+
+// ============================================================================
+// PALETA DEL GRÁFICO SEMANAL
+// ============================================================================
+
+val ChartBar1 = Color(0xFF42A5F5)
+val ChartBar2 = Color(0xFF00695C)
+val ChartBar3 = Color(0xFF00ACC1)
+val ChartBar4 = Color(0xFF26A69A)
+val ChartBar5 = Color(0xFFFB8C00)
+val ChartBar6 = Color(0xFFFFB74D)
+val ChartBar7 = Color(0xFFF57C00)
