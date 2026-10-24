@@ -22,17 +22,30 @@ data class HabitItem(
     val isMicroHabit: Boolean = false,
     val tags: List<String> = emptyList(),
     val timeOrDuration: String = "",
-    val categoryColorHex: Long = 0xFF00796B
+    val categoryColorHex: Long = 0xFF00796B,
+    // Preferencias persistidas; la programación de notificaciones queda para una integración posterior.
+    val reminderTime: String = "08:00",
+    val reminderEnabled: Boolean = false,
+    // Cambio pendiente de frecuencia: se aplica después del período abierto.
+    val nextFrequency: String? = null
 )
 
 /**
  * HabitHistoryItem representa un registro histórico de cumplimiento del hábito.
+ *
+ * - **¿Para qué sirve?** Presenta fecha, estado y avance sin modificar el registro guardado.
+ * - **¿Cómo funciona?** El ViewModel lo construye desde Room y conserva los datos de hábitos archivados.
+ * - **¿Qué pasa si lo quitamos?** El historial perdería su modelo de presentación independiente de la base.
  */
 data class HabitHistoryItem(
     val id: String,
     val habitTitle: String,
     val dateText: String,
-    val isCompleted: Boolean
+    val isCompleted: Boolean,
+    val progressText: String = "",
+    val statusText: String = if (isCompleted) "Completado" else "Pendiente",
+    val isProgressive: Boolean = false,
+    val timeOrDuration: String = ""
 )
 
 /**

@@ -9,6 +9,9 @@ plugins {
   alias(libs.plugins.google.services)
 }
 
+// Exporta el esquema para preparar migraciones futuras sin eliminar datos existentes.
+ksp { arg("room.schemaLocation", "$projectDir/schemas") }
+
 android {
   namespace = "com.example"
   compileSdk { version = release(36) { minorApiLevel = 1 } }

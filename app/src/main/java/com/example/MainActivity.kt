@@ -1,6 +1,20 @@
 package com.example
 
 import android.os.Bundle
+import androidx.activity.compose.BackHandler
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import com.example.model.TrackingSummary
+import com.example.model.UserEntity
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import com.example.ui.theme.isAppInDarkTheme
@@ -71,12 +85,11 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.model.FeedPostItem
 import com.example.model.HabitItem
 import com.example.ui.AddHabitScreen
+import com.example.ui.ProfileEditDialog
 import com.example.ui.FeedScreen
 import com.example.ui.SplashScreen
 import com.example.ui.TrackerScreen
 import com.example.ui.components.HabitImage
-import com.example.ui.initialFeedPosts
-import com.example.ui.initialHabitsList
 import com.example.viewmodel.MainViewModel
 import com.example.ui.theme.BadgeOrange
 import com.example.ui.theme.CardAccuracyDark
@@ -111,7 +124,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
-            val viewModel: MainViewModel = viewModel()
+            val viewModel: MainViewModel = viewModel(factory = MainViewModel.factory(this@MainActivity))
             val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
             MyApplicationTheme(darkTheme = uiState.isDarkMode) {
@@ -131,7 +144,7 @@ class MainActivity : ComponentActivity() {
  */
 @Composable
 fun HabitOctoMainApp(
-    viewModel: MainViewModel = viewModel(),
+    viewModel: MainViewModel = viewModel(factory = MainViewModel.factory(LocalContext.current.applicationContext)),
     isDarkMode: Boolean? = null,
     onToggleDarkMode: (() -> Unit)? = null
 ) {
@@ -139,6 +152,22 @@ fun HabitOctoMainApp(
     val activeDarkMode = isDarkMode ?: uiState.isDarkMode
     val toggleDarkModeAction = onToggleDarkMode ?: { viewModel.toggleDarkMode() }
     val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+    // Conserva desplazamiento y borradores de cada pestaña durante la navegación.
+    val tabState = rememberSaveableStateHolder()
+    var deleteTarget by remember { mutableStateOf<HabitItem?>(null) }
+    var editProfile by rememberSaveable { mutableStateOf(false) }
+    // Al volver a la app, recupera cambios persistidos y comprueba si cambió la fecha.
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) viewModel.refresh()
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+    // Volver desde Feed o Perfil regresa a Tracker; los diálogos conservan su propio cierre.
+    BackHandler(enabled = uiState.selectedTab != 0 && !uiState.isAddHabitDialogOpen) { viewModel.selectTab(0) }
+
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -146,10 +175,7 @@ fun HabitOctoMainApp(
             NavigationBar(
                 containerColor = MaterialTheme.colorScheme.background,
                 contentColor = MaterialTheme.colorScheme.primary,
-                tonalElevation = 2.dp,
-                modifier = Modifier.padding(
-                    bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
-                )
+                tonalElevation = 2.dp
             ) {
                 val selectedColor = MaterialTheme.colorScheme.onBackground
                 val unselectedColor = if (activeDarkMode) TextGrayDark else TextGrayLight
@@ -240,6 +266,13 @@ fun HabitOctoMainApp(
                 .fillMaxSize()
                 .padding(innerPadding)
         ) {
+            if (uiState.isLoading) {
+                Column(modifier = Modifier.align(Alignment.Center), horizontalAlignment = Alignment.CenterHorizontally) {
+                    CircularProgressIndicator()
+                    Text("Cargando tus datos…", modifier = Modifier.padding(16.dp))
+                    TextButton(onClick = viewModel::refresh) { Text("Reintentar") }
+                }
+            } else tabState.SaveableStateProvider(uiState.selectedTab) {
             when (uiState.selectedTab) {
                 0 -> {
                     TrackerScreen(
@@ -254,9 +287,11 @@ fun HabitOctoMainApp(
                             viewModel.openEditHabitDialog(habit)
                         },
                         onDeleteHabit = { habitToDelete ->
-                            viewModel.deleteHabit(habitToDelete)
-                            Toast.makeText(context, "Hábito '${habitToDelete.title}' eliminado", Toast.LENGTH_SHORT).show()
-                        }
+                            deleteTarget = habitToDelete
+                        },
+                        history = uiState.history,
+                        summary = uiState.summary,
+                        onSetProgress = viewModel::setHabitProgress
                     )
                 }
                 1 -> {
@@ -265,9 +300,10 @@ fun HabitOctoMainApp(
                         onToggleLike = { postId ->
                             viewModel.toggleLike(postId)
                         },
+                        publicationVersion = uiState.publicationVersion,
+                        isSaving = uiState.isSaving,
                         onPublishPost = { content, category, imageUrl ->
                             viewModel.publishPost(content, category, imageUrl)
-                            Toast.makeText(context, "¡Publicado en la comunidad!", Toast.LENGTH_SHORT).show()
                         }
                     )
                 }
@@ -280,23 +316,27 @@ fun HabitOctoMainApp(
                         verticalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
                         item { TopNavigationBarSection() }
-                        item { ProfileHeaderSection() }
+                        item { ProfileHeaderSection(uiState.user, uiState.summary, onEdit = { editProfile = true }) }
                         item {
                             DarkModeToggleSection(
                                 isDarkMode = activeDarkMode,
                                 onToggleDarkMode = toggleDarkModeAction
                             )
                         }
-                        item { PersonalStatsSection() }
-                        item { AccountDataSection() }
+                        item { PersonalStatsSection(uiState.summary) }
+                        item { AccountDataSection(uiState.user, onEdit = { editProfile = true }) }
                     }
                 }
             }
+
+            }
+            if (uiState.isSaving && !uiState.isLoading) LinearProgressIndicator(modifier = Modifier.fillMaxWidth().align(Alignment.TopCenter))
 
             // Diálogo unificado para Añadir y Modificar Hábitos y Micro Hábitos
             if (uiState.isAddHabitDialogOpen) {
                 AddHabitScreen(
                     habitToEdit = uiState.habitEditingTarget,
+                    isSaving = uiState.isSaving,
                     onDismiss = {
                         viewModel.closeAddHabitDialog()
                     },
@@ -304,12 +344,34 @@ fun HabitOctoMainApp(
                         viewModel.saveHabit(savedHabit)
                     },
                     onDeleteHabit = { habitToDelete ->
-                        viewModel.deleteHabit(habitToDelete)
+                        deleteTarget = habitToDelete
                     }
                 )
             }
         }
     }
+    // Se confirma el archivo del hábito sin borrar sus registros históricos.
+    deleteTarget?.let { habit ->
+        AlertDialog(onDismissRequest = { deleteTarget = null },
+            title = { Text("¿Eliminar ${habit.title}?") },
+            text = { Text("Se quitará de tus hábitos activos. Su historial de cumplimiento se conservará.") },
+            confirmButton = { TextButton(onClick = { viewModel.deleteHabit(habit); deleteTarget = null }) { Text("Eliminar") } },
+            dismissButton = { TextButton(onClick = { deleteTarget = null }) { Text("Cancelar") } })
+    }
+    if (editProfile) {
+        ProfileEditDialog(uiState.user, isSaving = uiState.isSaving, onDismiss = { editProfile = false },
+            onSave = { name, email -> viewModel.updateProfile(name, email) { editProfile = false } })
+    }
+
+    // Los errores se muestran sobre los formularios para no ocultar un guardado fallido.
+    if (uiState.error != null) {
+        AlertDialog(onDismissRequest = viewModel::clearError,
+            title = { Text("No se pudo completar la operación") },
+            text = { Text(uiState.error.orEmpty()) },
+            confirmButton = { TextButton(onClick = { viewModel.clearError(); viewModel.refresh() }) { Text("Reintentar carga") } },
+            dismissButton = { TextButton(onClick = viewModel::clearError) { Text("Cerrar") } })
+    }
+
 }
 
 /**
@@ -396,7 +458,7 @@ fun TopNavigationBarSection() {
         modifier = Modifier
             .fillMaxWidth()
             .padding(
-                top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 8.dp,
+                top = 8.dp,
                 start = 20.dp,
                 end = 20.dp,
                 bottom = 8.dp
@@ -443,7 +505,7 @@ fun TopNavigationBarSection() {
  * ProfileHeaderSection dibuja el avatar, insignia de nivel y nombre del usuario.
  */
 @Composable
-fun ProfileHeaderSection() {
+fun ProfileHeaderSection(user: UserEntity? = null, summary: TrackingSummary = TrackingSummary(), onEdit: () -> Unit = {}) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -455,7 +517,7 @@ fun ProfileHeaderSection() {
             modifier = Modifier.padding(bottom = 6.dp)
         ) {
             HabitImage(
-                model = "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400",
+                model = user?.avatarUrl ?: R.drawable.ic_pulpo,
                 contentDescription = "Profile Picture",
                 modifier = Modifier
                     .size(100.dp)
@@ -469,7 +531,7 @@ fun ProfileHeaderSection() {
                     .padding(horizontal = 8.dp, vertical = 2.dp)
             ) {
                 Text(
-                    text = "LVL 12",
+                    text = "LVL ${1 + summary.totalCompleted / 10}",
                     color = Color.White,
                     style = MaterialTheme.typography.labelSmall,
                     fontWeight = FontWeight.Bold
@@ -480,7 +542,7 @@ fun ProfileHeaderSection() {
         Spacer(modifier = Modifier.height(8.dp))
 
         Text(
-            text = "Alex Rivero",
+            text = user?.displayName ?: "Mi perfil",
             style = MaterialTheme.typography.titleLarge,
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.onBackground
@@ -489,10 +551,11 @@ fun ProfileHeaderSection() {
         Spacer(modifier = Modifier.height(2.dp))
 
         Text(
-            text = "Buscador de Hábitos • 28 Días Activo",
+            text = "${summary.activeDays} días con hábitos completados",
             style = MaterialTheme.typography.bodyMedium,
             color = if (isAppInDarkTheme) TextGrayDark else TextGrayLight
         )
+        TextButton(onClick = onEdit) { Text("Editar perfil local") }
     }
 }
 
@@ -500,7 +563,7 @@ fun ProfileHeaderSection() {
  * PersonalStatsSection renderiza el tablero de métricas y gráficos de rendimiento mensual.
  */
 @Composable
-fun PersonalStatsSection() {
+fun PersonalStatsSection(summary: TrackingSummary = TrackingSummary()) {
     val isDark = isAppInDarkTheme
     val textGray = if (isDark) TextGrayDark else TextGrayLight
     val iconBg = if (isDark) DarkIconBoxBg else LightIconBoxBg
@@ -529,7 +592,7 @@ fun PersonalStatsSection() {
                 color = MaterialTheme.colorScheme.primary
             )
             Text(
-                text = "ESTE MES",
+                text = "ÚLTIMOS 7 DÍAS",
                 style = MaterialTheme.typography.labelSmall,
                 fontWeight = FontWeight.Bold,
                 color = textGray
@@ -558,7 +621,7 @@ fun PersonalStatsSection() {
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            text = "87%",
+                            text = "${summary.weekPercent}%",
                             style = MaterialTheme.typography.displayMedium,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.primary
@@ -589,7 +652,7 @@ fun PersonalStatsSection() {
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.Bottom
                 ) {
-                    val heights = listOf(35.dp, 55.dp, 40.dp, 75.dp, 60.dp, 70.dp, 80.dp)
+                    val heights = summary.days.map { (it.percent * 0.8f).dp }
                     heights.forEachIndexed { index, h ->
                         val isHighest = index == heights.size - 1
                         Box(
@@ -626,14 +689,14 @@ fun PersonalStatsSection() {
                     )
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = "12 Días",
+                        text = "${summary.microStreak} días",
                         style = MaterialTheme.typography.headlineMedium,
                         fontWeight = FontWeight.Bold,
                         color = numberStreakColor
                     )
                     Spacer(modifier = Modifier.height(2.dp))
                     Text(
-                        text = "¡Récord personal!",
+                        text = "Mejor racha: ${summary.bestMicroStreak} días",
                         style = MaterialTheme.typography.bodySmall,
                         fontWeight = FontWeight.Medium,
                         color = subtitleStreakColor
@@ -649,21 +712,21 @@ fun PersonalStatsSection() {
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Text(
-                        text = "PRECISIÓN",
+                        text = "PROGRESO ACTUAL",
                         style = MaterialTheme.typography.labelSmall,
                         fontWeight = FontWeight.Bold,
                         color = subtitleAccuracyColor
                     )
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = "94%",
+                        text = "${summary.todayPercent}%",
                         style = MaterialTheme.typography.headlineMedium,
                         fontWeight = FontWeight.Bold,
                         color = numberAccuracyColor
                     )
                     Spacer(modifier = Modifier.height(2.dp))
                     Text(
-                        text = "Integridad de Hábito",
+                        text = "${summary.completedToday}/${summary.scheduledToday} metas actuales",
                         style = MaterialTheme.typography.bodySmall,
                         fontWeight = FontWeight.Medium,
                         color = subtitleAccuracyColor
@@ -678,7 +741,7 @@ fun PersonalStatsSection() {
  * AccountDataSection renderiza el panel de configuraciones y datos de la cuenta.
  */
 @Composable
-fun AccountDataSection() {
+fun AccountDataSection(user: UserEntity? = null, onEdit: () -> Unit = {}) {
     val context = LocalContext.current
     var isTwoFactorEnabled by remember { mutableStateOf(true) }
     val isDark = isAppInDarkTheme
@@ -703,7 +766,7 @@ fun AccountDataSection() {
             modifier = Modifier
                 .fillMaxWidth()
                 .clickable {
-                    Toast.makeText(context, "Cambiar correo electrónico", Toast.LENGTH_SHORT).show()
+                    onEdit()
                 },
             shape = RoundedCornerShape(20.dp),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -731,7 +794,7 @@ fun AccountDataSection() {
                     )
                     Spacer(modifier = Modifier.height(2.dp))
                     Text(
-                        text = "alex.r****@gmail.com",
+                        text = user?.email ?: "Sin correo configurado",
                         style = MaterialTheme.typography.bodyLarge,
                         fontWeight = FontWeight.Medium,
                         color = MaterialTheme.colorScheme.onSurface
@@ -751,7 +814,7 @@ fun AccountDataSection() {
             modifier = Modifier
                 .fillMaxWidth()
                 .clickable {
-                    Toast.makeText(context, "Actualizar contraseña", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, "El perfil local aún no tiene autenticación remota", Toast.LENGTH_SHORT).show()
                 },
             shape = RoundedCornerShape(20.dp),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -779,7 +842,7 @@ fun AccountDataSection() {
                     )
                     Spacer(modifier = Modifier.height(2.dp))
                     Text(
-                        text = "••••••••••••",
+                        text = "Autenticación pendiente",
                         style = MaterialTheme.typography.bodyLarge,
                         fontWeight = FontWeight.Medium,
                         color = MaterialTheme.colorScheme.onSurface
@@ -823,7 +886,7 @@ fun AccountDataSection() {
                     )
                     Spacer(modifier = Modifier.height(2.dp))
                     Text(
-                        text = if (isTwoFactorEnabled) "Activo" else "Inactivo",
+                        text = "Disponible al conectar autenticación",
                         style = MaterialTheme.typography.bodyLarge,
                         fontWeight = FontWeight.Bold,
                         color = if (isTwoFactorEnabled) MaterialTheme.colorScheme.primary else textGray
@@ -831,8 +894,9 @@ fun AccountDataSection() {
                 }
 
                 Switch(
-                    checked = isTwoFactorEnabled,
-                    onCheckedChange = { isTwoFactorEnabled = it },
+                    checked = false,
+                    enabled = false,
+                    onCheckedChange = {},
                     colors = SwitchDefaults.colors(
                         checkedThumbColor = Color.White,
                         checkedTrackColor = MaterialTheme.colorScheme.secondary,

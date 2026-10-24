@@ -42,6 +42,12 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.foundation.layout.safeDrawingPadding
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.KeyboardType
+import java.util.UUID
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -116,26 +122,27 @@ fun AddHabitScreen(
     habitToEdit: HabitItem? = null,
     onDismiss: () -> Unit,
     onSaveHabit: (HabitItem) -> Unit,
-    onDeleteHabit: ((HabitItem) -> Unit)? = null
+    onDeleteHabit: ((HabitItem) -> Unit)? = null,
+    isSaving: Boolean = false
 ) {
     // Contexto de Android para Toasts de validación y confirmación
     val context = LocalContext.current
     val isEditing = habitToEdit != null
 
     // Estados reactivos vinculados a los campos del formulario
-    var habitName by remember { mutableStateOf(habitToEdit?.title ?: "") }
-    var selectedCategory by remember { mutableStateOf(habitToEdit?.category ?: "Hidratación") }
-    var isDailyFrequency by remember { mutableStateOf(habitToEdit?.frequency != "Semanal") }
-    var isProgressive by remember { mutableStateOf(habitToEdit?.isProgressive ?: false) }
-    var isMicroHabit by remember { mutableStateOf(habitToEdit?.isMicroHabit ?: false) }
-    var dailyGoalText by remember { mutableStateOf(if (habitToEdit?.isProgressive == true) habitToEdit.maxProgress.toString() else "") }
-    var reminderTime by remember { mutableStateOf("08:00 AM") }
-    var isReminderEnabled by remember { mutableStateOf(true) }
-    var durationText by remember { mutableStateOf(habitToEdit?.timeOrDuration?.ifEmpty { "00:30 horas" } ?: "00:30 horas") }
+    var habitName by rememberSaveable(habitToEdit?.id) { mutableStateOf(habitToEdit?.title ?: "") }
+    var selectedCategory by rememberSaveable(habitToEdit?.id) { mutableStateOf(habitToEdit?.category ?: "Hidratación") }
+    var isDailyFrequency by rememberSaveable(habitToEdit?.id) { mutableStateOf((habitToEdit?.nextFrequency ?: habitToEdit?.frequency) != "Semanal") }
+    var isProgressive by rememberSaveable(habitToEdit?.id) { mutableStateOf(habitToEdit?.isProgressive ?: false) }
+    var isMicroHabit by rememberSaveable(habitToEdit?.id) { mutableStateOf(habitToEdit?.isMicroHabit ?: false) }
+    var dailyGoalText by rememberSaveable(habitToEdit?.id) { mutableStateOf(if (habitToEdit?.isProgressive == true) habitToEdit.maxProgress.toString() else "") }
+    var reminderTime by rememberSaveable(habitToEdit?.id) { mutableStateOf(habitToEdit?.reminderTime ?: "08:00") }
+    var isReminderEnabled by rememberSaveable(habitToEdit?.id) { mutableStateOf(habitToEdit?.reminderEnabled ?: false) }
+    var durationText by rememberSaveable(habitToEdit?.id) { mutableStateOf(habitToEdit?.timeOrDuration ?: "") }
 
     // Diálogo nativo de pantalla completa inmersiva
     Dialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = { if (!isSaving) onDismiss() },
         properties = DialogProperties(usePlatformDefaultWidth = false)
     ) {
         Surface(
@@ -145,6 +152,8 @@ fun AddHabitScreen(
             Column(
                 modifier = Modifier
                     .fillMaxSize()
+                    .safeDrawingPadding()
+                    .imePadding()
                     .padding(16.dp)
                     .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
@@ -157,7 +166,7 @@ fun AddHabitScreen(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    TextButton(onClick = onDismiss) {
+                    TextButton(enabled = !isSaving, onClick = onDismiss) {
                         Text(
                             text = "Cancelar",
                             color = MaterialTheme.colorScheme.primary,
@@ -168,6 +177,8 @@ fun AddHabitScreen(
 
                     Text(
                         text = if (isEditing) "Editar Hábito" else "Añadir Nuevo Hábito",
+                        modifier = Modifier.weight(1f),
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                         fontSize = 18.sp,
                         fontWeight = FontWeight.Bold,
                         color = TextDark
@@ -333,6 +344,13 @@ fun AddHabitScreen(
                     }
                 }
 
+                Text(
+                    if (isEditing) "Si cambias la frecuencia, se aplicará al terminar el período actual; tu historial se conserva."
+                    else if (isDailyFrequency) "La meta se reinicia cada día."
+                    else "Una meta por semana, de lunes a domingo.",
+                    fontSize = 12.sp, color = TextGray
+                )
+
                 // Campo 4: Interruptor de hábito progresivo con meta numérica
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -362,7 +380,7 @@ fun AddHabitScreen(
                 if (isProgressive) {
                     Column {
                         Text(
-                            text = "Meta Diaria (Número)",
+                            text = if (isDailyFrequency) "Meta Diaria (Número)" else "Meta Semanal (Número)",
                             fontSize = 14.sp,
                             fontWeight = FontWeight.Bold,
                             color = TextDark
@@ -371,6 +389,8 @@ fun AddHabitScreen(
                         OutlinedTextField(
                             value = dailyGoalText,
                             onValueChange = { dailyGoalText = it },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            singleLine = true,
                             placeholder = { Text("ej., 8", color = TextGray) },
                             modifier = Modifier.fillMaxWidth(),
                             shape = RoundedCornerShape(12.dp),
@@ -394,22 +414,18 @@ fun AddHabitScreen(
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = "Hora de Recordatorio",
+                            text = "Preferencia de Recordatorio",
                             fontSize = 14.sp,
                             fontWeight = FontWeight.Bold,
                             color = TextDark
                         )
                         Spacer(modifier = Modifier.height(4.dp))
-                        Box(
-                            modifier = Modifier
-                                .background(
-                                    if (isAppInDarkTheme) SurfaceDarkVariant else SurfaceLightVariant,
-                                    RoundedCornerShape(8.dp)
-                                )
-                                .padding(horizontal = 12.dp, vertical = 8.dp)
-                        ) {
-                            Text(text = reminderTime, fontWeight = FontWeight.Bold, color = TextDark)
-                        }
+                        OutlinedTextField(
+                            value = reminderTime,
+                            onValueChange = { reminderTime = it },
+                            label = { Text("Hora (HH:mm)") }, singleLine = true,
+                            modifier = Modifier.width(150.dp)
+                        )
                     }
                     Switch(
                         checked = isReminderEnabled,
@@ -417,6 +433,8 @@ fun AddHabitScreen(
                         colors = SwitchDefaults.colors(checkedTrackColor = SecondaryTeal)
                     )
                 }
+
+                Text("Se guarda tu preferencia; las notificaciones automáticas aún no están disponibles.", fontSize = 12.sp, color = TextGray)
 
                 // Campo 6: Duración estimada del hábito
                 Column {
@@ -427,17 +445,14 @@ fun AddHabitScreen(
                         color = TextDark
                     )
                     Spacer(modifier = Modifier.height(6.dp))
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(
-                                if (isAppInDarkTheme) SurfaceDarkVariant else SurfaceLightVariant,
-                                RoundedCornerShape(12.dp)
-                            )
-                            .padding(14.dp)
-                    ) {
-                        Text(text = durationText, fontWeight = FontWeight.Medium, color = TextDark)
-                    }
+                    OutlinedTextField(
+                        value = durationText,
+                        onValueChange = { durationText = it },
+                        label = { Text("Duración estimada (opcional)") },
+                        placeholder = { Text("Ej., 2 min") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
                 }
 
                 Spacer(modifier = Modifier.height(8.dp))
@@ -481,36 +496,44 @@ fun AddHabitScreen(
 
                 // Botón principal de guardado / actualización
                 Button(
+                    enabled = !isSaving,
                     onClick = {
                         if (habitName.isBlank()) {
                             Toast.makeText(context, "Escribe el nombre del hábito", Toast.LENGTH_SHORT).show()
                             return@Button
                         }
 
-                        val parsedGoal = dailyGoalText.toIntOrNull() ?: 1
+                        if (!Regex("([01][0-9]|2[0-3]):[0-5][0-9]").matches(reminderTime)) {
+                            Toast.makeText(context, "Usa una hora válida en formato HH:mm", Toast.LENGTH_SHORT).show()
+                            return@Button
+                        }
+                        val parsedGoal = dailyGoalText.toIntOrNull() ?: 0
+                        if (isProgressive && parsedGoal <= 0) {
+                            Toast.makeText(context, "La meta debe ser un número entero mayor que cero", Toast.LENGTH_SHORT).show()
+                            return@Button
+                        }
                         val updatedTags = mutableListOf(if (isDailyFrequency) "Diario" else "Semanal", selectedCategory)
                         if (isMicroHabit) updatedTags.add(0, "Micro")
 
                         val habitResult = HabitItem(
-                            id = habitToEdit?.id ?: System.currentTimeMillis().toString(),
-                            title = habitName,
-                            subtitle = if (isProgressive) "$dailyGoalText al día" else if (isMicroHabit) "Micro hábito de 2 min" else "Hábito diario",
+                            id = habitToEdit?.id ?: UUID.randomUUID().toString(),
+                            title = habitName.trim(),
+                            subtitle = if (isProgressive) "$parsedGoal por ${if (isDailyFrequency) "día" else "semana"}" else if (isMicroHabit) "Micro hábito" else if (isDailyFrequency) "Hábito diario" else "Hábito semanal",
                             category = selectedCategory,
                             frequency = if (isDailyFrequency) "Diario" else "Semanal",
-                            streak = habitToEdit?.streak ?: 1,
+                            streak = habitToEdit?.streak ?: 0,
                             isProgressive = isProgressive,
                             isMicroHabit = isMicroHabit,
-                            currentProgress = habitToEdit?.currentProgress ?: (if (isProgressive) 1 else 0),
+                            currentProgress = habitToEdit?.currentProgress ?: 0,
                             maxProgress = if (isProgressive) parsedGoal.coerceAtLeast(1) else 1,
                             isCompleted = habitToEdit?.isCompleted ?: false,
                             tags = updatedTags,
-                            timeOrDuration = if (isMicroHabit) "2 Min" else durationText
+                            timeOrDuration = durationText.trim(),
+                            reminderTime = reminderTime,
+                            reminderEnabled = isReminderEnabled
                         )
 
                         onSaveHabit(habitResult)
-                        val msg = if (isEditing) "¡Hábito modificado!" else "¡Hábito guardado!"
-                        Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
-                        onDismiss()
                     },
                     modifier = Modifier
                         .fillMaxWidth()
@@ -519,7 +542,7 @@ fun AddHabitScreen(
                     shape = RoundedCornerShape(26.dp)
                 ) {
                     Text(
-                        text = if (isEditing) "Guardar Cambios" else "Guardar Hábito",
+                        text = if (isSaving) "Guardando…" else if (isEditing) "Guardar Cambios" else "Guardar Hábito",
                         fontSize = 16.sp,
                         fontWeight = FontWeight.Bold,
                         color = TextDark
@@ -527,12 +550,10 @@ fun AddHabitScreen(
                 }
 
                 // Botón secundario para eliminar hábito existente (Solo disponible en modo edición)
-                if (isEditing && onDeleteHabit != null && habitToEdit != null) {
+                if (isEditing && onDeleteHabit != null) {
                     OutlinedButton(
                         onClick = {
                             onDeleteHabit(habitToEdit)
-                            Toast.makeText(context, "Hábito eliminado", Toast.LENGTH_SHORT).show()
-                            onDismiss()
                         },
                         modifier = Modifier
                             .fillMaxWidth()

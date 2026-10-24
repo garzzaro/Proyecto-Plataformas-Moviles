@@ -1,6 +1,11 @@
 package com.example.ui
 
 import android.widget.Toast
+import android.content.Intent
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -57,6 +62,7 @@ import com.example.R
 import com.example.ui.components.HabitImage
 import com.example.TopNavigationBarSection
 import com.example.model.FeedPostItem
+import com.example.model.OriginalHabitData
 import com.example.ui.components.CardWhite
 import com.example.ui.components.ScreenBackground
 import com.example.ui.components.TextDark
@@ -71,60 +77,7 @@ import com.example.ui.theme.SecondaryTeal
 /**
  * Lista inicial de publicaciones: exactamente 2 con imagen y 2 únicamente de texto.
  */
-val initialFeedPosts = listOf(
-    FeedPostItem(
-        id = "p1",
-        authorName = "Sofia Morales",
-        authorAvatarUrl = "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=200",
-        habitTitle = "Plancha 1 Min",
-        habitCategory = "Ejercicio",
-        content = "¡Completé mi micro hábito antes del desayuno! Día 14 consecutivo sin fallar 💪",
-        postImageUrl = "https://images.unsplash.com/photo-1517838277536-f5f99be501cd?w=800", // Publicación 1 con foto
-        timeAgo = "Hace 15 min",
-        likesCount = 12,
-        isLiked = false,
-        streakCount = 14
-    ),
-    FeedPostItem(
-        id = "p2",
-        authorName = "Carlos Mendoza",
-        authorAvatarUrl = "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=200",
-        habitTitle = "Beber Agua",
-        habitCategory = "Hidratación",
-        content = "Ya alcancé 6 de los 8 vasos recomendados. ¡Mantenerse bien hidratado durante el estudio cambia totalmente la concentración! 💧",
-        postImageUrl = null, // Publicación 2 solo texto
-        timeAgo = "Hace 1 hora",
-        likesCount = 8,
-        isLiked = true,
-        streakCount = 7
-    ),
-    FeedPostItem(
-        id = "p3",
-        authorName = "Lucia Ramos",
-        authorAvatarUrl = "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=200",
-        habitTitle = "Meditación",
-        habitCategory = "Mindfulness",
-        content = "10 minutos de respiración consciente en el parque para empezar el día con paz mental 🧘‍♀️✨",
-        postImageUrl = "https://images.unsplash.com/photo-1506126613408-eca07ce68773?w=800", // Publicación 3 con foto
-        timeAgo = "Hace 3 horas",
-        likesCount = 19,
-        isLiked = false,
-        streakCount = 21
-    ),
-    FeedPostItem(
-        id = "p4",
-        authorName = "Diego Castillo",
-        authorAvatarUrl = "https://images.unsplash.com/photo-1522075469751-3a6694fb2f61?w=200",
-        habitTitle = "Estudiar Código",
-        habitCategory = "Productividad",
-        content = "Terminé la práctica completa de Compose y Jetpack en Android Studio con Kotlin. ¡La consistencia diaria en pequeños bloques de 45 minutos rinde increíbles frutos!",
-        postImageUrl = null, // Publicación 4 solo texto
-        timeAgo = "Hace 5 horas",
-        likesCount = 25,
-        isLiked = true,
-        streakCount = 9
-    )
-)
+val initialFeedPosts = OriginalHabitData.posts
 
 /**
  * FeedScreen muestra la comunidad de usuarios compartiendo logros, fotos de hábitos y motivación.
@@ -139,30 +92,47 @@ fun FeedScreen(
     posts: List<FeedPostItem>,
     onToggleLike: (String) -> Unit,
     onPublishPost: (String, String, String?) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    publicationVersion: Int = 0,
+    isSaving: Boolean = false
 ) {
     // Contexto de Android para emitir notificaciones visuales emergentes
     val context = LocalContext.current
 
     // Estado reactivo del texto del nuevo post
-    var newPostContent by remember { mutableStateOf("") }
+    var newPostContent by rememberSaveable { mutableStateOf("") }
 
     // Estado reactivo de la categoría elegida para el post
-    var selectedCategoryForPost by remember { mutableStateOf("General") }
+    var selectedCategoryForPost by rememberSaveable { mutableStateOf("General") }
 
     // Estado reactivo que contiene la URL de la imagen adjunta opcional
-    var attachedImageUrl by remember { mutableStateOf<String?>(null) }
+    var attachedImageUrl by rememberSaveable { mutableStateOf<String?>(null) }
 
     // Opciones de categorías disponibles para clasificar las publicaciones del feed
     val categories = listOf("General", "Ejercicio", "Hidratación", "Mindfulness", "Productividad", "Nutrición")
 
-    // Colección de fotografías de prueba para simular la selección de imagen de galería
-    val sampleGalleryImages = listOf(
-        "https://images.unsplash.com/photo-1517838277536-f5f99be501cd?w=800",
-        "https://images.unsplash.com/photo-1544367567-0f2fcb009e0b?w=800",
-        "https://images.unsplash.com/photo-1506126613408-eca07ce68773?w=800",
-        "https://images.unsplash.com/photo-1512621776951-a57141f2eefd?w=800"
-    )
+    var submitted by rememberSaveable { mutableStateOf(false) }
+    var lastPublicationVersion by rememberSaveable { mutableStateOf(publicationVersion) }
+    // El borrador se limpia después de confirmar el guardado, no al pulsar Publicar.
+    LaunchedEffect(publicationVersion) {
+        if (publicationVersion != lastPublicationVersion && submitted) {
+            newPostContent = ""
+            attachedImageUrl = null
+            submitted = false
+        }
+        lastPublicationVersion = publicationVersion
+    }
+    val photoPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) {
+            try {
+                // Conserva el acceso a la imagen después de cerrar y reabrir la app.
+                context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                attachedImageUrl = uri.toString()
+            } catch (_: SecurityException) {
+                Toast.makeText(context, "No se pudo conservar el permiso de la imagen. Selecciona otra.", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
 
     // Columna con reciclaje dinámico eficiente para desplazamiento vertical suave
     LazyColumn(
@@ -200,6 +170,7 @@ fun FeedScreen(
 
                     // Campo de entrada de texto para el mensaje de la publicación
                     OutlinedTextField(
+                        enabled = !isSaving,
                         value = newPostContent,
                         onValueChange = { newPostContent = it },
                         placeholder = { Text("¿Qué hábito completaste hoy?", color = TextGray) },
@@ -282,9 +253,9 @@ fun FeedScreen(
                     ) {
                         // Botón secundario para simular la carga de foto desde la galería
                         OutlinedButton(
+                            enabled = !isSaving,
                             onClick = {
-                                attachedImageUrl = sampleGalleryImages.random()
-                                Toast.makeText(context, "Imagen seleccionada para adjuntar", Toast.LENGTH_SHORT).show()
+                                photoPicker.launch(arrayOf("image/*"))
                             },
                             shape = RoundedCornerShape(18.dp)
                         ) {
@@ -308,13 +279,12 @@ fun FeedScreen(
                             onClick = {
                                 if (newPostContent.isNotBlank() || attachedImageUrl != null) {
                                     onPublishPost(newPostContent, selectedCategoryForPost, attachedImageUrl)
-                                    newPostContent = ""
-                                    attachedImageUrl = null
+                                    submitted = true
                                 }
                             },
                             colors = ButtonDefaults.buttonColors(containerColor = SecondaryTeal),
                             shape = RoundedCornerShape(20.dp),
-                            enabled = newPostContent.isNotBlank() || attachedImageUrl != null
+                            enabled = !isSaving && (newPostContent.isNotBlank() || attachedImageUrl != null)
                         ) {
                             Icon(
                                 imageVector = Icons.AutoMirrored.Outlined.Send,
@@ -344,7 +314,7 @@ fun FeedScreen(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = "Comunidad HabitOcto",
+                    text = "Tu Feed",
                     fontSize = 20.sp,
                     fontWeight = FontWeight.Bold,
                     color = TextDark
@@ -355,6 +325,14 @@ fun FeedScreen(
                     color = TextGray
                 )
             }
+        }
+
+        item {
+            Text("Publicaciones guardadas en este dispositivo. La comunidad se conectará al incorporar un servidor.",
+                modifier = Modifier.padding(horizontal = 20.dp), color = TextGray, fontSize = 12.sp)
+        }
+        if (posts.isEmpty()) {
+            item { Text("Comparte tu primer logro para comenzar.", modifier = Modifier.padding(20.dp), color = TextGray) }
         }
 
         // Renderizado dinámico de las publicaciones del feed

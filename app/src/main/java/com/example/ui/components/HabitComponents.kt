@@ -62,6 +62,10 @@ import androidx.compose.ui.unit.sp
 import com.example.R
 import com.example.model.HabitHistoryItem
 import com.example.model.HabitItem
+import com.example.model.DayProgress
+import com.example.model.HabitDates
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import com.example.ui.theme.BorderGrayDark
 import com.example.ui.theme.BorderGrayLight
 import com.example.ui.theme.BorderInactiveDark
@@ -220,6 +224,7 @@ fun getCategoryBgColor(category: String): Color {
  *   4. En modo edición (`isEditMode`), expone los botones de modificar y eliminar.
  * - **¿Qué pasa si lo quitamos?** No se podrían visualizar ni manipular los hábitos en el dashboard principal.
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun HabitItemCard(
     habit: HabitItem,
@@ -274,8 +279,8 @@ fun HabitItemCard(
             Column(
                 modifier = Modifier.weight(1f)
             ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
+                FlowRow(
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     Text(
@@ -304,7 +309,7 @@ fun HabitItemCard(
                 Spacer(modifier = Modifier.height(2.dp))
 
                 Text(
-                    text = habit.subtitle,
+                    text = "${if (habit.isCompleted) "Completado" else if (habit.currentProgress > 0) "En progreso" else "Pendiente"} · Racha: ${habit.streak} ${if (habit.frequency == "Semanal") "sem." else "días"}",
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Medium,
                     color = TextGray
@@ -313,9 +318,9 @@ fun HabitItemCard(
                 Spacer(modifier = Modifier.height(6.dp))
 
                 // Fila de etiquetas (Chips) del hábito
-                Row(
+                FlowRow(
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
                     habit.tags.take(3).forEach { tag ->
                         val chipBg = if (isDark) ChipBackgroundDark else ChipBackgroundLight
@@ -370,72 +375,7 @@ fun HabitItemCard(
                     }
                 }
             } else {
-                // Modo normal: Controles de avance progresivo, temporizado o checkbox
-                Column(
-                    horizontalAlignment = Alignment.End,
-                    verticalArrangement = Arrangement.Center
-                ) {
-                    if (habit.isProgressive) {
-                        Text(
-                            text = "${habit.currentProgress}/${habit.maxProgress}",
-                            fontSize = 15.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = TextDark
-                        )
-                        Spacer(modifier = Modifier.height(4.dp))
-                        LinearProgressIndicator(
-                            progress = { (habit.currentProgress.toFloat() / habit.maxProgress.toFloat()).coerceIn(0f, 1f) },
-                            modifier = Modifier
-                                .width(50.dp)
-                                .height(7.dp)
-                                .clip(RoundedCornerShape(4.dp))
-                                .clickable { onToggleComplete(habit) },
-                            color = MaterialTheme.colorScheme.primary,
-                            trackColor = if (isDark) BorderTrackDark else BorderGrayLight,
-                            strokeCap = StrokeCap.Round
-                        )
-                    } else if (habit.timeOrDuration.isNotEmpty() && habit.timeOrDuration.contains("Min")) {
-                        Box(
-                            modifier = Modifier
-                                .size(36.dp)
-                                .background(if (habit.isCompleted) MaterialTheme.colorScheme.primary else TimerOrange, CircleShape)
-                                .clickable { onToggleComplete(habit) },
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                imageVector = if (habit.isCompleted) Icons.Filled.Check else Icons.Outlined.Timer,
-                                contentDescription = "Temporizador",
-                                tint = Color.White,
-                                modifier = Modifier.size(18.dp)
-                            )
-                        }
-                    } else {
-                        Box(
-                            modifier = Modifier
-                                .size(36.dp)
-                                .border(
-                                    width = 2.dp,
-                                    color = if (habit.isCompleted) MaterialTheme.colorScheme.primary else if (isDark) BorderInactiveDark else BorderInactiveLight,
-                                    shape = CircleShape
-                                )
-                                .background(
-                                    color = if (habit.isCompleted) MaterialTheme.colorScheme.primary.copy(alpha = 0.2f) else Color.Transparent,
-                                    shape = CircleShape
-                                )
-                                .clickable { onToggleComplete(habit) },
-                            contentAlignment = Alignment.Center
-                        ) {
-                            if (habit.isCompleted) {
-                                Icon(
-                                    imageVector = Icons.Filled.Check,
-                                    contentDescription = "Completado",
-                                    tint = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.size(18.dp)
-                                )
-                            }
-                        }
-                    }
-                }
+                HabitCompletionControl(habit = habit, onClick = { onToggleComplete(habit) })
             }
         }
     }
@@ -458,50 +398,18 @@ fun HabitHistoryItemRow(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val isDark = isAppInDarkTheme
     Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .clickable { onClick() }
-            .padding(vertical = 10.dp, horizontal = 12.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
+        modifier = modifier.fillMaxWidth().clickable(onClick = onClick).padding(12.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(28.dp)
-                    .background(
-                        color = if (item.isCompleted) SecondaryTeal else if (isDark) BorderGrayDark else BorderGrayLight,
-                        shape = CircleShape
-                    ),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = Icons.Outlined.Check,
-                    contentDescription = null,
-                    tint = Color.White,
-                    modifier = Modifier.size(16.dp)
-                )
-            }
-
-            Text(
-                text = item.habitTitle,
-                fontSize = 15.sp,
-                fontWeight = FontWeight.Medium,
-                color = TextDark
-            )
+        HabitStatusIcon(item.isCompleted, item.isProgressive, item.timeOrDuration, item.statusText)
+        Column(modifier = Modifier.weight(1f)) {
+            Text(item.habitTitle, fontSize = 15.sp, fontWeight = FontWeight.Medium, color = TextDark)
+            Text(item.dateText, fontSize = 12.sp, color = TextGray)
+            Text(listOf(item.statusText, item.progressText).filter { it.isNotBlank() }.joinToString(" · "),
+                fontSize = 12.sp, color = if (item.isCompleted) MaterialTheme.colorScheme.primary else TextGray)
         }
-
-        Text(
-            text = item.dateText,
-            fontSize = 13.sp,
-            fontWeight = FontWeight.Medium,
-            color = TextGray
-        )
     }
 }
 
@@ -518,7 +426,8 @@ fun HabitHistoryItemRow(
  */
 @Composable
 fun MascotBannerCard(
-    onVisitMascotClick: () -> Unit
+    onVisitMascotClick: () -> Unit,
+    streak: Int = 0
 ) {
     Column(
         modifier = Modifier
@@ -547,7 +456,7 @@ fun MascotBannerCard(
         Spacer(modifier = Modifier.height(4.dp))
 
         Text(
-            text = "Has alcanzado tu meta de 7 días. ¡Octo está orgulloso!",
+            text = if (streak > 0) "Llevas $streak días de racha completando microhábitos. ¡Sigue así!" else "Completa un microhábito hoy para empezar tu racha con Octo.",
             fontSize = 14.sp,
             color = TextDark,
             textAlign = TextAlign.Center,
@@ -632,14 +541,15 @@ fun NewHabitButtonCard(onClick: () -> Unit) {
 // ============================================================================
 
 /**
- * WeeklyProgressCard muestra el cumplimiento de los 7 días de la semana.
+ * WeeklyProgressCard muestra el avance persistido de los últimos siete días.
  *
  * - **¿Para qué sirve?** Ofrece una vista rápida de la consistencia semanal del usuario.
- * - **¿Cómo funciona?** Dibuja los días (L, M, M, J, V, S, D) con indicadores circulares activos o inactivos.
+ * - **¿Cómo funciona?** Recibe el resumen reconstruido desde Room para los hábitos activos;
+ *   muestra completados/programados por fecha y un check al completar todas las metas del día.
  * - **¿Qué pasa si lo quitamos?** Se eliminaría el indicador semanal resumido del dashboard.
  */
 @Composable
-fun WeeklyProgressCard() {
+fun WeeklyProgressCard(progress: List<DayProgress> = emptyList()) {
     val isDark = isAppInDarkTheme
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -657,8 +567,8 @@ fun WeeklyProgressCard() {
 
             Spacer(modifier = Modifier.height(12.dp))
 
-            val days = listOf("L", "M", "M", "J", "V", "S", "D")
-            val completed = listOf(true, true, true, true, true, true, false)
+            val days = progress.map { HabitDates.label(it.day, "EEE") }
+            val completed = progress.map { it.scheduled > 0 && it.completed == it.scheduled }
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -685,12 +595,13 @@ fun WeeklyProgressCard() {
                             if (completed[index]) {
                                 Icon(
                                     imageVector = Icons.Outlined.Check,
-                                    contentDescription = null,
+                                    contentDescription = "Todos los hábitos del día completados",
                                     tint = Color.White,
                                     modifier = Modifier.size(18.dp)
                                 )
                             }
                         }
+                        Text("${progress[index].completed}/${progress[index].scheduled}", fontSize = 10.sp, color = TextGray)
                     }
                 }
             }

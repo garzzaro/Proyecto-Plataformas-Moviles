@@ -49,6 +49,11 @@ import com.example.ui.components.HabitImage
 import com.example.TopNavigationBarSection
 import com.example.model.HabitHistoryItem
 import com.example.model.HabitItem
+import com.example.model.OriginalHabitData
+import com.example.model.TrackingSummary
+import com.example.model.HabitDates
+import com.example.ui.components.HabitProgressDialog
+import androidx.compose.runtime.saveable.rememberSaveable
 import com.example.ui.components.CardWhite
 import com.example.ui.components.HabitHistoryItemRow
 import com.example.ui.components.HabitItemCard
@@ -77,143 +82,12 @@ import com.example.ui.theme.SuccessGreenDark
 /**
  * Lista inicial de hábitos y micro hábitos con más de 10 elementos para garantizar scroll.
  */
-val initialHabitsList = listOf(
-    HabitItem(
-        id = "1",
-        title = "Beber Agua",
-        subtitle = "8 vasos al día",
-        category = "Hidratación",
-        frequency = "Diario",
-        streak = 7,
-        isProgressive = true,
-        isMicroHabit = true,
-        currentProgress = 5,
-        maxProgress = 8,
-        tags = listOf("Micro", "Diario", "Hidratación")
-    ),
-    HabitItem(
-        id = "2",
-        title = "Leer 1 Página",
-        subtitle = "Racha: 12",
-        category = "Aprendizaje",
-        frequency = "Diario",
-        streak = 12,
-        isCompleted = true,
-        isMicroHabit = true,
-        tags = listOf("Micro", "Lectura")
-    ),
-    HabitItem(
-        id = "3",
-        title = "Plancha 1 Min",
-        subtitle = "Ritual Mañanero",
-        category = "Ejercicio",
-        frequency = "Diario",
-        streak = 8,
-        timeOrDuration = "1 Min",
-        isMicroHabit = true,
-        tags = listOf("Micro", "Fuerza")
-    ),
-    HabitItem(
-        id = "4",
-        title = "Meditación",
-        subtitle = "10 min al día",
-        category = "Mindfulness",
-        frequency = "Diario",
-        streak = 15,
-        isCompleted = true,
-        tags = listOf("Mindfulness")
-    ),
-    HabitItem(
-        id = "5",
-        title = "Caminar 10,000 Pasos",
-        subtitle = "8,200 / 10,000",
-        category = "Ejercicio",
-        frequency = "Diario",
-        streak = 4,
-        isProgressive = true,
-        currentProgress = 8200,
-        maxProgress = 10000,
-        tags = listOf("Salud", "Diario")
-    ),
-    HabitItem(
-        id = "6",
-        title = "Estudiar Código",
-        subtitle = "45 min al día",
-        category = "Productividad",
-        frequency = "Diario",
-        streak = 20,
-        tags = listOf("Aprendizaje", "Código")
-    ),
-    HabitItem(
-        id = "7",
-        title = "Dormir 8 Horas",
-        subtitle = "Meta nocturna",
-        category = "Sueño",
-        frequency = "Diario",
-        streak = 9,
-        isCompleted = true,
-        tags = listOf("Sueño", "Salud")
-    ),
-    HabitItem(
-        id = "8",
-        title = "Comer 2 Frutas",
-        subtitle = "Porción diaria",
-        category = "Nutrición",
-        frequency = "Diario",
-        streak = 3,
-        isProgressive = true,
-        isMicroHabit = true,
-        currentProgress = 1,
-        maxProgress = 2,
-        tags = listOf("Micro", "Nutrición")
-    ),
-    HabitItem(
-        id = "9",
-        title = "Escribir Diario",
-        subtitle = "Reflexión nocturna",
-        category = "Salud Mental",
-        frequency = "Diario",
-        streak = 7,
-        tags = listOf("Bienestar")
-    ),
-    HabitItem(
-        id = "10",
-        title = "Ahorrar $5",
-        subtitle = "Fondo personal",
-        category = "Finanzas",
-        frequency = "Semanal",
-        streak = 2,
-        isMicroHabit = true,
-        tags = listOf("Micro", "Finanzas", "Ahorro")
-    ),
-    HabitItem(
-        id = "11",
-        title = "Práctica de Guitarra",
-        subtitle = "20 min al día",
-        category = "Arte y Creatividad",
-        frequency = "Diario",
-        streak = 5,
-        tags = listOf("Música", "Arte")
-    )
-)
+val initialHabitsList = OriginalHabitData.habits
 
 /**
  * Lista de registros para la sección de historial de cumplimiento.
  */
-val sampleHistoryItems = listOf(
-    HabitHistoryItem("h1", "Beber Agua", "Lun, Oct 21", true),
-    HabitHistoryItem("h2", "Leer 1 Página", "Dom, Oct 20", true),
-    HabitHistoryItem("h3", "Plancha 1 Min", "Dom, Oct 20", true),
-    HabitHistoryItem("h4", "Meditación", "Sáb, Oct 19", false),
-    HabitHistoryItem("h5", "Caminar 10,000 Pasos", "Vie, Oct 18", true),
-    HabitHistoryItem("h6", "Estudiar Código", "Jue, Oct 17", true),
-    HabitHistoryItem("h7", "Dormir 8 Horas", "Mié, Oct 16", true),
-    HabitHistoryItem("h8", "Comer 2 Frutas", "Mar, Oct 15", true),
-    HabitHistoryItem("h9", "Escribir Diario", "Lun, Oct 14", false),
-    HabitHistoryItem("h10", "Ahorrar $5", "Dom, Oct 13", true),
-    HabitHistoryItem("h11", "Aprender Idioma", "Sáb, Oct 12", true),
-    HabitHistoryItem("h12", "Pintar o Dibujar", "Vie, Oct 11", true)
-)
+val sampleHistoryItems = OriginalHabitData.history
 
 /**
  * TrackerScreen representa la pestaña unificada de rastreo de hábitos y estadísticas.
@@ -230,11 +104,19 @@ fun TrackerScreen(
     onToggleHabit: (HabitItem) -> Unit,
     onOpenAddHabit: () -> Unit,
     onEditHabit: (HabitItem) -> Unit,
-    onDeleteHabit: (HabitItem) -> Unit
+    onDeleteHabit: (HabitItem) -> Unit,
+    history: List<HabitHistoryItem> = emptyList(),
+    summary: TrackingSummary = TrackingSummary(),
+    onSetProgress: (HabitItem, Int) -> Unit = { _, _ -> }
 ) {
     val context = LocalContext.current
     // Estado reactivo que activa o desactiva los controles de edición directa sobre las tarjetas
-    var isEditMode by remember { mutableStateOf(false) }
+    var isEditMode by rememberSaveable { mutableStateOf(false) }
+    // Conserva el identificador del hábito abierto; el avance siempre procede del estado persistente.
+    var progressTarget by rememberSaveable { mutableStateOf<String?>(null) }
+    habits.firstOrNull { it.id == progressTarget }?.let { habit ->
+        HabitProgressDialog(habit, onDismiss = { progressTarget = null }, onSave = { onSetProgress(habit, it) })
+    }
 
     LazyColumn(
         modifier = Modifier
@@ -251,6 +133,7 @@ fun TrackerScreen(
         // Banner motivacional con el pulpo celebrando la racha
         item {
             MascotBannerCard(
+                streak = summary.microStreak,
                 onVisitMascotClick = {
                     Toast.makeText(context, "¡Saludando a Octo! 🐙✨", Toast.LENGTH_SHORT).show()
                 }
@@ -264,7 +147,7 @@ fun TrackerScreen(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Column {
+                Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
                     Text(
                         text = "Tus Hábitos y Micro Hábitos",
                         fontSize = 20.sp,
@@ -319,11 +202,17 @@ fun TrackerScreen(
                     verticalArrangement = Arrangement.spacedBy(10.dp),
                     contentPadding = PaddingValues(bottom = 8.dp)
                 ) {
+                    if (habits.isEmpty()) {
+                        item { Text("Aún no tienes hábitos. Crea el primero para comenzar tu seguimiento.", modifier = Modifier.padding(16.dp), color = TextGray) }
+                    }
                     items(items = habits, key = { it.id }) { habit ->
                         HabitItemCard(
                             habit = habit,
                             isEditMode = isEditMode,
-                            onToggleComplete = { onToggleHabit(it) },
+                            onToggleComplete = {
+                                if (it.isProgressive || it.timeOrDuration.isNotBlank()) progressTarget = it.id
+                                else onToggleHabit(it)
+                            },
                             onClickDetail = { onEditHabit(it) },
                             onEditHabit = { onEditHabit(it) },
                             onDeleteHabit = { onDeleteHabit(it) }
@@ -338,9 +227,9 @@ fun TrackerScreen(
             NewHabitButtonCard(onClick = onOpenAddHabit)
         }
 
-        // Tarjeta de progreso semanal resumido
+        // Tarjeta semanal reactiva: el resumen excluye hábitos archivados y conserva el historial aparte.
         item {
-            WeeklyProgressCard()
+            WeeklyProgressCard(summary.days)
         }
 
         // Título de la sección de estadísticas de cumplimiento
@@ -365,8 +254,8 @@ fun TrackerScreen(
                 Column(
                     modifier = Modifier.padding(18.dp)
                 ) {
-                    val days = listOf("L", "M", "M", "J", "V", "S", "D")
-                    val percentages = listOf(85, 90, 75, 95, 80, 60, 70)
+                    val days = summary.days.map { HabitDates.label(it.day, "EEE") }
+                    val percentages = summary.days.map { it.percent }
                     val barColors = listOf(
                         ChartBar1,
                         ChartBar2,
@@ -483,10 +372,10 @@ fun TrackerScreen(
                             }
                             Spacer(modifier = Modifier.height(8.dp))
                             Text(
-                                text = "38/45",
-                                fontSize = 32.sp,
+                                text = "${summary.completedWeek}/${summary.scheduledWeek}",
+                                fontSize = 26.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = SuccessGreenDark
+                                color = if (isAppInDarkTheme) SuccessGreen else SuccessGreenDark
                             )
                         }
                     }
@@ -520,10 +409,10 @@ fun TrackerScreen(
                             }
                             Spacer(modifier = Modifier.height(8.dp))
                             Text(
-                                text = "45",
-                                fontSize = 32.sp,
+                                text = "${summary.scheduledWeek}",
+                                fontSize = 26.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = InfoBlueDark
+                                color = if (isAppInDarkTheme) InfoBlue else InfoBlueDark
                             )
                         }
                     }
@@ -534,7 +423,7 @@ fun TrackerScreen(
         // Título de la sección de historial
         item {
             Text(
-                text = "Historial de Hábitos",
+                text = "Historial · Últimos 7 días",
                 fontSize = 18.sp,
                 fontWeight = FontWeight.Bold,
                 color = TextDark,
@@ -559,7 +448,10 @@ fun TrackerScreen(
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                     contentPadding = PaddingValues(bottom = 8.dp)
                 ) {
-                    items(items = sampleHistoryItems, key = { it.id }) { historyItem ->
+                    if (history.isEmpty()) {
+                        item { Text("Tu historial aparecerá aquí cuando crees un hábito.", modifier = Modifier.padding(16.dp), color = TextGray) }
+                    }
+                    items(items = history, key = { it.id }) { historyItem ->
                         HabitHistoryItemRow(
                             item = historyItem,
                             onClick = {
