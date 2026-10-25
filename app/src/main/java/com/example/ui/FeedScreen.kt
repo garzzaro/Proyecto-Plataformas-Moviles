@@ -62,7 +62,6 @@ import com.example.R
 import com.example.ui.components.HabitImage
 import com.example.TopNavigationBarSection
 import com.example.model.FeedPostItem
-import com.example.model.OriginalHabitData
 import com.example.ui.components.CardWhite
 import com.example.ui.components.ScreenBackground
 import com.example.ui.components.TextDark
@@ -73,11 +72,6 @@ import com.example.ui.theme.BorderGrayLight
 import com.example.ui.theme.LikePink
 import com.example.ui.theme.PrimaryTeal
 import com.example.ui.theme.SecondaryTeal
-
-/**
- * Lista inicial de publicaciones: exactamente 2 con imagen y 2 únicamente de texto.
- */
-val initialFeedPosts = OriginalHabitData.posts
 
 /**
  * FeedScreen muestra la comunidad de usuarios compartiendo logros, fotos de hábitos y motivación.

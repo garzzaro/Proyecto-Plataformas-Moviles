@@ -1,8 +1,6 @@
 package com.example.viewmodel
 
-import android.content.Context
 import androidx.lifecycle.ViewModel
-import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.example.model.*
 import kotlinx.coroutines.CancellationException
@@ -16,36 +14,6 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-
-// ============================================================================
-// ESTADO DE LA INTERFAZ: MainUiState
-// ============================================================================
-
-/**
- * MainUiState representa el estado unificado de las pantallas de HabitOcto.
- *
- * - **¿Para qué sirve?** Reúne hábitos, historial, estadísticas, perfil y controles temporales de
- *   navegación y diálogos.
- * - **¿Cómo funciona?** Los datos persistentes proceden del repositorio; selectedTab y los diálogos
- *   controlan la sesión de interfaz.
- * - **¿Qué pasa si lo quitamos?** Las pantallas tendrían estados separados que podrían quedar
- *   desactualizados.
- */
-data class MainUiState(
-    val habits: List<HabitItem> = emptyList(),
-    val feedPosts: List<FeedPostItem> = emptyList(),
-    val selectedTab: Int = 0,
-    val isDarkMode: Boolean = false,
-    val isAddHabitDialogOpen: Boolean = false,
-    val habitEditingTarget: HabitItem? = null,
-    val history: List<HabitHistoryItem> = emptyList(),
-    val summary: TrackingSummary = TrackingSummary(),
-    val user: UserEntity? = null,
-    val isLoading: Boolean = true,
-    val isSaving: Boolean = false,
-    val error: String? = null,
-    val publicationVersion: Int = 0
-)
 
 // ============================================================================
 // CONTROLADOR DE ESTADO: MainViewModel
@@ -102,7 +70,8 @@ class MainViewModel(private val repository: HabitRepository) : ViewModel() {
         if (observation?.isActive == true) return
         observation = viewModelScope.launch {
             repository.snapshots.catch { error ->
-                _uiState.update { it.copy(error = error.message ?: "No se pudieron cargar tus datos") }
+                if (error is CancellationException) throw error
+                _uiState.update { it.copy(dataState = UiState.Error(error.message ?: "No se pudieron cargar tus datos")) }
             }.collect { value -> snapshot = value; render(value) }
         }
     }
@@ -156,7 +125,12 @@ class MainViewModel(private val repository: HabitRepository) : ViewModel() {
                 post.authorStreak ?: summary.microStreak)
         }
         _uiState.update { it.copy(habits = habits, history = history, summary = summary, user = data.user,
-            isDarkMode = data.user?.isDarkMode ?: it.isDarkMode, feedPosts = posts, isLoading = data.user == null) }
+            isDarkMode = data.user?.isDarkMode ?: it.isDarkMode, feedPosts = posts,
+            dataState = when {
+                data.user == null -> UiState.Error("No se encontró el perfil local. Vuelve a intentar la carga.")
+                habits.isEmpty() -> UiState.Empty
+                else -> UiState.Success(Unit)
+            }) }
     }
 
     /**
@@ -169,13 +143,16 @@ class MainViewModel(private val repository: HabitRepository) : ViewModel() {
      * - **¿Qué pasa si lo quitamos?** Las operaciones podrían competir entre sí o fallar sin informar
      *   al usuario.
      */
-    private fun write(action: suspend () -> Unit) {
+    private fun write(onFailure: ((Exception) -> Unit)? = null, action: suspend () -> Unit) {
         viewModelScope.launch {
             writes.withLock {
                 _uiState.update { it.copy(isSaving = true, error = null) }
                 try { action() }
                 catch (cancelled: CancellationException) { throw cancelled }
-                catch (error: Exception) { _uiState.update { it.copy(error = error.message ?: "No se pudo guardar. Inténtalo de nuevo.") } }
+                catch (error: Exception) {
+                    if (onFailure != null) onFailure(error)
+                    else _uiState.update { it.copy(error = error.message ?: "No se pudo guardar. Inténtalo de nuevo.") }
+                }
                 finally { _uiState.update { it.copy(isSaving = false) } }
             }
         }
@@ -190,7 +167,10 @@ class MainViewModel(private val repository: HabitRepository) : ViewModel() {
      * - **¿Qué pasa si lo quitamos?** El progreso podría mostrarse con una fecha antigua o sin los
      *   cambios persistidos.
      */
-    fun refresh() = write {
+    fun refresh() = write(onFailure = { error ->
+        _uiState.update { it.copy(dataState = UiState.Error(error.message ?: "No se pudieron cargar tus datos")) }
+    }) {
+        if (snapshot == null) _uiState.update { it.copy(dataState = UiState.Loading) }
         val today = HabitDates.today()
         repository.refresh(today)
         day = today
@@ -257,6 +237,13 @@ class MainViewModel(private val repository: HabitRepository) : ViewModel() {
         closeAddHabitDialog()
     }
 
+    /** La UI entrega campos sin interpretar; las reglas y el guardado se resuelven aquí. */
+    fun saveHabitDraft(draft: HabitDraft) = write {
+        val habit = draft.toHabitItem(_uiState.value.habitEditingTarget)
+        repository.save(habit, HabitDates.today())
+        closeAddHabitDialog()
+    }
+
     /** Archiva el hábito; Room vuelve a emitir y render actualiza el contador semanal. */
     fun deleteHabit(habit: HabitItem) = write {
         repository.archive(habit.id, HabitDates.today())
@@ -283,18 +270,4 @@ class MainViewModel(private val repository: HabitRepository) : ViewModel() {
         onSaved()
     }
 
-    // ============================================================================
-    // CREACIÓN DEL VIEWMODEL CON EL REPOSITORIO LOCAL
-    // ============================================================================
-
-    companion object {
-        /** Proporciona el repositorio de Room usando el contexto de aplicación. */
-        fun factory(context: Context): ViewModelProvider.Factory = object : ViewModelProvider.Factory {
-            @Suppress("UNCHECKED_CAST")
-            override fun <T : ViewModel> create(modelClass: Class<T>): T {
-                require(modelClass.isAssignableFrom(MainViewModel::class.java))
-                return MainViewModel(RoomHabitRepository(HabitDatabase.get(context), originalData = OriginalHabitData)) as T
-            }
-        }
-    }
 }

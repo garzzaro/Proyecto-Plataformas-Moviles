@@ -84,6 +84,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.model.FeedPostItem
 import com.example.model.HabitItem
+import com.example.di.AppContainer
+import com.example.ui.components.DataStateContent
 import com.example.ui.AddHabitScreen
 import com.example.ui.ProfileEditDialog
 import com.example.ui.FeedScreen
@@ -124,7 +126,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
-            val viewModel: MainViewModel = viewModel(factory = MainViewModel.factory(this@MainActivity))
+            val viewModel = rememberMainViewModel()
             val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
             MyApplicationTheme(darkTheme = uiState.isDarkMode) {
@@ -132,6 +134,13 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
+}
+
+@Composable
+private fun rememberMainViewModel(): MainViewModel {
+    val context = LocalContext.current.applicationContext
+    val container = remember(context) { AppContainer(context) }
+    return viewModel(factory = container.mainViewModelFactory)
 }
 
 /**
@@ -144,7 +153,7 @@ class MainActivity : ComponentActivity() {
  */
 @Composable
 fun HabitOctoMainApp(
-    viewModel: MainViewModel = viewModel(factory = MainViewModel.factory(LocalContext.current.applicationContext)),
+    viewModel: MainViewModel = rememberMainViewModel(),
     isDarkMode: Boolean? = null,
     onToggleDarkMode: (() -> Unit)? = null
 ) {
@@ -266,69 +275,65 @@ fun HabitOctoMainApp(
                 .fillMaxSize()
                 .padding(innerPadding)
         ) {
-            if (uiState.isLoading) {
-                Column(modifier = Modifier.align(Alignment.Center), horizontalAlignment = Alignment.CenterHorizontally) {
-                    CircularProgressIndicator()
-                    Text("Cargando tus datos…", modifier = Modifier.padding(16.dp))
-                    TextButton(onClick = viewModel::refresh) { Text("Reintentar") }
-                }
-            } else tabState.SaveableStateProvider(uiState.selectedTab) {
-            when (uiState.selectedTab) {
-                0 -> {
-                    TrackerScreen(
-                        habits = uiState.habits,
-                        onToggleHabit = { habitToToggle ->
-                            viewModel.toggleHabit(habitToToggle)
-                        },
-                        onOpenAddHabit = {
-                            viewModel.openAddHabitDialog()
-                        },
-                        onEditHabit = { habit ->
-                            viewModel.openEditHabitDialog(habit)
-                        },
-                        onDeleteHabit = { habitToDelete ->
-                            deleteTarget = habitToDelete
-                        },
-                        history = uiState.history,
-                        summary = uiState.summary,
-                        onSetProgress = viewModel::setHabitProgress
-                    )
-                }
-                1 -> {
-                    FeedScreen(
-                        posts = uiState.feedPosts,
-                        onToggleLike = { postId ->
-                            viewModel.toggleLike(postId)
-                        },
-                        publicationVersion = uiState.publicationVersion,
-                        isSaving = uiState.isSaving,
-                        onPublishPost = { content, category, imageUrl ->
-                            viewModel.publishPost(content, category, imageUrl)
-                        }
-                    )
-                }
-                2 -> {
-                    LazyColumn(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .background(MaterialTheme.colorScheme.background)
-                            .padding(bottom = 16.dp),
-                        verticalArrangement = Arrangement.spacedBy(16.dp)
-                    ) {
-                        item { TopNavigationBarSection() }
-                        item { ProfileHeaderSection(uiState.user, uiState.summary, onEdit = { editProfile = true }) }
-                        item {
-                            DarkModeToggleSection(
-                                isDarkMode = activeDarkMode,
-                                onToggleDarkMode = toggleDarkModeAction
+            DataStateContent(state = uiState.dataState, onRetry = { viewModel.refresh() }) {
+                tabState.SaveableStateProvider(uiState.selectedTab) {
+                    when (uiState.selectedTab) {
+                        0 -> {
+                            TrackerScreen(
+                                habits = uiState.habits,
+                                onToggleHabit = { habitToToggle ->
+                                    viewModel.toggleHabit(habitToToggle)
+                                },
+                                onOpenAddHabit = {
+                                    viewModel.openAddHabitDialog()
+                                },
+                                onEditHabit = { habit ->
+                                    viewModel.openEditHabitDialog(habit)
+                                },
+                                onDeleteHabit = { habitToDelete ->
+                                    deleteTarget = habitToDelete
+                                },
+                                history = uiState.history,
+                                summary = uiState.summary,
+                                onSetProgress = viewModel::setHabitProgress
                             )
                         }
-                        item { PersonalStatsSection(uiState.summary) }
-                        item { AccountDataSection(uiState.user, onEdit = { editProfile = true }) }
+                        1 -> {
+                            FeedScreen(
+                                posts = uiState.feedPosts,
+                                onToggleLike = { postId ->
+                                    viewModel.toggleLike(postId)
+                                },
+                                publicationVersion = uiState.publicationVersion,
+                                isSaving = uiState.isSaving,
+                                onPublishPost = { content, category, imageUrl ->
+                                    viewModel.publishPost(content, category, imageUrl)
+                                }
+                            )
+                        }
+                        2 -> {
+                            LazyColumn(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .background(MaterialTheme.colorScheme.background)
+                                    .padding(bottom = 16.dp),
+                                verticalArrangement = Arrangement.spacedBy(16.dp)
+                            ) {
+                                item { TopNavigationBarSection() }
+                                item { ProfileHeaderSection(uiState.user, uiState.summary, onEdit = { editProfile = true }) }
+                                item {
+                                    DarkModeToggleSection(
+                                        isDarkMode = activeDarkMode,
+                                        onToggleDarkMode = toggleDarkModeAction
+                                    )
+                                }
+                                item { PersonalStatsSection(uiState.summary) }
+                                item { AccountDataSection(uiState.user, onEdit = { editProfile = true }) }
+                            }
+                        }
                     }
-                }
-            }
 
+                }
             }
             if (uiState.isSaving && !uiState.isLoading) LinearProgressIndicator(modifier = Modifier.fillMaxWidth().align(Alignment.TopCenter))
 
@@ -341,7 +346,7 @@ fun HabitOctoMainApp(
                         viewModel.closeAddHabitDialog()
                     },
                     onSaveHabit = { savedHabit ->
-                        viewModel.saveHabit(savedHabit)
+                        viewModel.saveHabitDraft(savedHabit)
                     },
                     onDeleteHabit = { habitToDelete ->
                         deleteTarget = habitToDelete
@@ -368,8 +373,7 @@ fun HabitOctoMainApp(
         AlertDialog(onDismissRequest = viewModel::clearError,
             title = { Text("No se pudo completar la operación") },
             text = { Text(uiState.error.orEmpty()) },
-            confirmButton = { TextButton(onClick = { viewModel.clearError(); viewModel.refresh() }) { Text("Reintentar carga") } },
-            dismissButton = { TextButton(onClick = viewModel::clearError) { Text("Cerrar") } })
+            confirmButton = { TextButton(onClick = viewModel::clearError) { Text("Volver al formulario") } })
     }
 
 }
@@ -743,7 +747,6 @@ fun PersonalStatsSection(summary: TrackingSummary = TrackingSummary()) {
 @Composable
 fun AccountDataSection(user: UserEntity? = null, onEdit: () -> Unit = {}) {
     val context = LocalContext.current
-    var isTwoFactorEnabled by remember { mutableStateOf(true) }
     val isDark = isAppInDarkTheme
     val textGray = if (isDark) TextGrayDark else TextGrayLight
 
@@ -889,7 +892,7 @@ fun AccountDataSection(user: UserEntity? = null, onEdit: () -> Unit = {}) {
                         text = "Disponible al conectar autenticación",
                         style = MaterialTheme.typography.bodyLarge,
                         fontWeight = FontWeight.Bold,
-                        color = if (isTwoFactorEnabled) MaterialTheme.colorScheme.primary else textGray
+                        color = textGray
                     )
                 }
 

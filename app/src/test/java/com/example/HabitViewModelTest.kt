@@ -6,6 +6,8 @@ import com.example.viewmodel.MainViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.test.*
 import org.junit.After
 import org.junit.Assert.*
@@ -31,12 +33,62 @@ class HabitViewModelTest {
     }
 
     @Test fun `fresh storage loads empty state and seven actual dates`() = trackedTest {
+        assertTrue(vm.uiState.value.dataState is UiState.Loading)
         runCurrent()
         assertFalse(vm.uiState.value.isLoading)
+        assertTrue(vm.uiState.value.dataState is UiState.Empty)
         assertTrue(vm.uiState.value.habits.isEmpty())
         assertTrue(vm.uiState.value.feedPosts.isEmpty())
         assertEquals(7, vm.uiState.value.summary.days.size)
         assertEquals(0, vm.uiState.value.summary.microStreak)
+    }
+
+    @Test fun `initial load failure stops loading and retry recovers`() {
+        // El fallo debe estar configurado antes de que runTest ejecute el init pendiente.
+        repo.failRefresh = true
+        trackedTest {
+        runCurrent()
+        assertTrue(vm.uiState.value.dataState is UiState.Error)
+        assertFalse(vm.uiState.value.isLoading)
+        assertFalse(vm.uiState.value.isSaving)
+        repo.failRefresh = false
+        vm.refresh()
+        runCurrent()
+        assertTrue(vm.uiState.value.dataState is UiState.Empty)
+        assertNull(vm.uiState.value.error)
+        }
+    }
+
+    @Test fun `observation failure can restart the repository flow`() = trackedTest {
+        repo.failObservation = true
+        runCurrent()
+        assertTrue(vm.uiState.value.dataState is UiState.Error)
+        assertFalse(vm.uiState.value.isLoading)
+        repo.failObservation = false
+        vm.refresh()
+        runCurrent()
+        assertTrue(vm.uiState.value.dataState is UiState.Empty)
+    }
+
+    @Test fun `invalid draft does not reach storage and keeps the form open`() = trackedTest {
+        runCurrent()
+        vm.openAddHabitDialog()
+        vm.saveHabitDraft(HabitDraft("Leer", "Aprendizaje", true, true, false, "0", "08:00", false, ""))
+        runCurrent()
+        assertEquals(0, repo.saveCount)
+        assertTrue(vm.uiState.value.isAddHabitDialogOpen)
+        assertNotNull(vm.uiState.value.error)
+    }
+
+    @Test fun `valid draft reaches the repository and closes only after save`() = trackedTest {
+        runCurrent()
+        vm.openAddHabitDialog()
+        vm.saveHabitDraft(HabitDraft(" Leer ", "Aprendizaje", true, true, false, "3", "08:00", false, ""))
+        runCurrent()
+        assertEquals(1, repo.saveCount)
+        assertEquals("Leer", repo.savedHabit!!.title)
+        assertEquals(3, repo.savedHabit!!.maxProgress)
+        assertFalse(vm.uiState.value.isAddHabitDialogOpen)
     }
 
     @Test fun `failed save keeps the form open with a visible error`() = trackedTest {
@@ -57,7 +109,7 @@ class HabitViewModelTest {
         vm.saveHabit(HabitItem("h", "Leer", "", "Aprendizaje"))
         runCurrent()
         assertFalse(vm.uiState.value.isAddHabitDialogOpen)
-        repo.snapshots.value = repo.snapshots.value.copy(user = repo.snapshots.value.user!!.copy(displayName = "María"))
+        repo.data.value = repo.data.value.copy(user = repo.data.value.user!!.copy(displayName = "María"))
         runCurrent()
         assertEquals(2, vm.uiState.value.selectedTab)
         assertEquals("María", vm.uiState.value.user!!.displayName)
@@ -73,9 +125,10 @@ class HabitViewModelTest {
         val records = habits.map { habit ->
             HabitRecordEntity(habit.id, today, today, habit.title, true, false, "", 1, 1, today)
         }
-        repo.snapshots.value = repo.snapshots.value.copy(habits = habits, records = records)
+        repo.data.value = repo.data.value.copy(habits = habits, records = records)
         runCurrent()
         assertEquals(2, vm.uiState.value.summary.completedWeek)
+        assertTrue(vm.uiState.value.dataState is UiState.Success)
         assertEquals(2, vm.uiState.value.summary.scheduledWeek)
 
         vm.deleteHabit(vm.uiState.value.habits.single { it.id == "second" })
@@ -95,12 +148,27 @@ class HabitViewModelTest {
     }
 
     private class FakeRepository : HabitRepository {
-        override val snapshots = MutableStateFlow(HabitSnapshot(null, emptyList(), emptyList(), emptyList()))
+        val data = MutableStateFlow(HabitSnapshot(null, emptyList(), emptyList(), emptyList()))
+        var failObservation = false
+        override val snapshots = flow {
+            if (failObservation) error("Error de lectura")
+            data.collect { emit(it) }
+        }
         var failSave = false
-        override suspend fun refresh(today: Long) { snapshots.value = snapshots.value.copy(user = UserEntity("u", createdDay = today)) }
-        override suspend fun save(habit: HabitItem, today: Long) { if (failSave) error("No se pudo guardar") }
+        var failRefresh = false
+        var saveCount = 0
+        var savedHabit: HabitItem? = null
+        override suspend fun refresh(today: Long) {
+            if (failRefresh) error("No se pudo abrir la base de datos")
+            data.value = data.value.copy(user = UserEntity("u", createdDay = today))
+        }
+        override suspend fun save(habit: HabitItem, today: Long) {
+            if (failSave) error("No se pudo guardar")
+            saveCount++
+            savedHabit = habit
+        }
         override suspend fun archive(id: String, today: Long) {
-            snapshots.value = snapshots.value.copy(habits = snapshots.value.habits.map {
+            data.value = data.value.copy(habits = data.value.habits.map {
                 if (it.id == id) it.copy(archivedDay = today) else it
             })
         }

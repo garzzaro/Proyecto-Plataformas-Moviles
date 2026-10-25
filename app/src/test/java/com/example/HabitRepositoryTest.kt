@@ -5,6 +5,13 @@ import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import com.example.model.*
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.take
+import kotlinx.coroutines.flow.toList
+import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.async
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.*
@@ -13,7 +20,6 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
-import java.util.UUID
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [36])
@@ -21,7 +27,8 @@ class HabitRepositoryTest {
     private lateinit var db: HabitDatabase
     private lateinit var repo: RoomHabitRepository
     private lateinit var context: Context
-    private val databaseName = "test-${UUID.randomUUID()}.db"
+    // Robolectric aísla cada método en su directorio. Un nombre corto evita MAX_PATH de Windows.
+    private val databaseName = "h.db"
     private val today = 20_000L
     private fun item(id: String = "h", weekly: Boolean = false) = HabitItem(id, "Tomar agua", "", "Hidratación",
         frequency = if (weekly) "Semanal" else "Diario", isProgressive = true, maxProgress = 8, isMicroHabit = true,
@@ -114,6 +121,21 @@ class HabitRepositoryTest {
         repo.setProgress("h", 5, today)
         try { repo.setProgress("h", 99, today); fail("Invalid progress") } catch (_: IllegalArgumentException) { }
         assertEquals(5, db.habits().records("h").single().progress)
+    }
+
+    @Test fun `Room emits new data after a write without calling refresh`() = runBlocking {
+        withTimeout(10_000) {
+            val firstRead = CompletableDeferred<Unit>()
+            val observed = async(start = CoroutineStart.UNDISPATCHED) {
+                repo.snapshots.onEach { firstRead.complete(Unit) }.take(2).toList()
+            }
+            // Esperar una primera lectura garantiza que se prueba una invalidación de Room.
+            firstRead.await()
+            repo.save(item(), today)
+            val values = observed.await()
+            assertTrue(values.first().habits.isEmpty())
+            assertEquals("h", values.last().habits.single().id)
+        }
     }
 
     @Test fun `archived habit stays excluded from weekly counters after database reopening`() = runBlocking {

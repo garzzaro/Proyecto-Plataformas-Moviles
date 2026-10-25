@@ -49,7 +49,6 @@ import com.example.ui.components.HabitImage
 import com.example.TopNavigationBarSection
 import com.example.model.HabitHistoryItem
 import com.example.model.HabitItem
-import com.example.model.OriginalHabitData
 import com.example.model.TrackingSummary
 import com.example.model.HabitDates
 import com.example.ui.components.HabitProgressDialog
@@ -78,16 +77,6 @@ import com.example.ui.theme.InfoBlue
 import com.example.ui.theme.InfoBlueDark
 import com.example.ui.theme.SuccessGreen
 import com.example.ui.theme.SuccessGreenDark
-
-/**
- * Lista inicial de hábitos y micro hábitos con más de 10 elementos para garantizar scroll.
- */
-val initialHabitsList = OriginalHabitData.habits
-
-/**
- * Lista de registros para la sección de historial de cumplimiento.
- */
-val sampleHistoryItems = OriginalHabitData.history
 
 /**
  * TrackerScreen representa la pestaña unificada de rastreo de hábitos y estadísticas.

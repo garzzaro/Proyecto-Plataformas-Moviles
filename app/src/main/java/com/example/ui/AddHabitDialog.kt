@@ -47,7 +47,6 @@ import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.KeyboardType
-import java.util.UUID
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -65,6 +64,7 @@ import androidx.compose.ui.window.DialogProperties
 import com.example.R
 import com.example.ui.components.HabitImage
 import com.example.model.HabitItem
+import com.example.model.HabitDraft
 import com.example.ui.components.CardWhite
 import com.example.ui.components.ScreenBackground
 import com.example.ui.components.TextDark
@@ -113,7 +113,7 @@ val expandedCategories = listOf(
  *   1. Recibe un hábito opcional `habitToEdit`. Si existe, inicializa los campos con sus valores actuales.
  *   2. Permite conmutar entre hábito convencional y micro hábito mediante un Switch.
  *   3. En modo edición, expone el botón de eliminación conectado a `onDeleteHabit`.
- *   4. Al pulsar Guardar, construye un `HabitItem` inmutable y lo entrega al callback `onSaveHabit`.
+ *   4. Al pulsar Guardar, emite un borrador; el ViewModel valida y guarda los datos.
  * - **¿Qué pasa si lo quitamos?** El usuario no tendría ningún formulario para ingresar o ajustar hábitos en la aplicación.
  */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -121,7 +121,7 @@ val expandedCategories = listOf(
 fun AddHabitScreen(
     habitToEdit: HabitItem? = null,
     onDismiss: () -> Unit,
-    onSaveHabit: (HabitItem) -> Unit,
+    onSaveHabit: (HabitDraft) -> Unit,
     onDeleteHabit: ((HabitItem) -> Unit)? = null,
     isSaving: Boolean = false
 ) {
@@ -498,42 +498,11 @@ fun AddHabitScreen(
                 Button(
                     enabled = !isSaving,
                     onClick = {
-                        if (habitName.isBlank()) {
-                            Toast.makeText(context, "Escribe el nombre del hábito", Toast.LENGTH_SHORT).show()
-                            return@Button
-                        }
-
-                        if (!Regex("([01][0-9]|2[0-3]):[0-5][0-9]").matches(reminderTime)) {
-                            Toast.makeText(context, "Usa una hora válida en formato HH:mm", Toast.LENGTH_SHORT).show()
-                            return@Button
-                        }
-                        val parsedGoal = dailyGoalText.toIntOrNull() ?: 0
-                        if (isProgressive && parsedGoal <= 0) {
-                            Toast.makeText(context, "La meta debe ser un número entero mayor que cero", Toast.LENGTH_SHORT).show()
-                            return@Button
-                        }
-                        val updatedTags = mutableListOf(if (isDailyFrequency) "Diario" else "Semanal", selectedCategory)
-                        if (isMicroHabit) updatedTags.add(0, "Micro")
-
-                        val habitResult = HabitItem(
-                            id = habitToEdit?.id ?: UUID.randomUUID().toString(),
-                            title = habitName.trim(),
-                            subtitle = if (isProgressive) "$parsedGoal por ${if (isDailyFrequency) "día" else "semana"}" else if (isMicroHabit) "Micro hábito" else if (isDailyFrequency) "Hábito diario" else "Hábito semanal",
-                            category = selectedCategory,
-                            frequency = if (isDailyFrequency) "Diario" else "Semanal",
-                            streak = habitToEdit?.streak ?: 0,
-                            isProgressive = isProgressive,
-                            isMicroHabit = isMicroHabit,
-                            currentProgress = habitToEdit?.currentProgress ?: 0,
-                            maxProgress = if (isProgressive) parsedGoal.coerceAtLeast(1) else 1,
-                            isCompleted = habitToEdit?.isCompleted ?: false,
-                            tags = updatedTags,
-                            timeOrDuration = durationText.trim(),
-                            reminderTime = reminderTime,
-                            reminderEnabled = isReminderEnabled
-                        )
-
-                        onSaveHabit(habitResult)
+                        onSaveHabit(HabitDraft(
+                            name = habitName, category = selectedCategory, isDaily = isDailyFrequency,
+                            isProgressive = isProgressive, isMicroHabit = isMicroHabit, goalText = dailyGoalText,
+                            reminderTime = reminderTime, reminderEnabled = isReminderEnabled, duration = durationText
+                        ))
                     },
                     modifier = Modifier
                         .fillMaxWidth()

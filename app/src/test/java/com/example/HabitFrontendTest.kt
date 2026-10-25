@@ -1,6 +1,7 @@
 package com.example
 
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -13,6 +14,7 @@ import com.example.model.*
 import com.example.ui.TrackerScreen
 import com.example.ui.components.HabitItemCard
 import com.example.ui.components.HabitProgressDialog
+import com.example.ui.components.DataStateContent
 import com.example.ui.theme.MyApplicationTheme
 import com.github.takahirom.roborazzi.captureRoboImage
 import org.junit.Assert.assertEquals
@@ -31,6 +33,26 @@ class HabitFrontendTest {
     private val habit = HabitItem("h", "Leer una página de un libro cada mañana", "", "Aprendizaje", isMicroHabit = true,
         tags = listOf("Micro", "Diario", "Aprendizaje"))
 
+    @Test fun `load error exposes retry and replaces the loading indicator`() {
+        var state by mutableStateOf<UiState<Unit>>(UiState.Loading)
+        var retries = 0
+        compose.setContent {
+            MyApplicationTheme {
+                DataStateContent(state, onRetry = { retries++; state = UiState.Empty }) {
+                    androidx.compose.material3.Text("Sin hábitos guardados")
+                }
+            }
+        }
+        compose.onNodeWithText("Cargando tus datos…").assertExists()
+        compose.runOnIdle { state = UiState.Error("No se pudo abrir el almacenamiento") }
+        compose.onNodeWithText("Cargando tus datos…").assertDoesNotExist()
+        compose.onNodeWithText("No se pudieron cargar tus datos").assertExists()
+        compose.onRoot().captureRoboImage(filePath = "build/reports/habitocto/load-error.png")
+        compose.onNodeWithText("Reintentar").performClick()
+        compose.onNodeWithText("Sin hábitos guardados").assertExists()
+        assertEquals(1, retries)
+    }
+
     @Test fun `completion control changes status and keeps the card editable`() {
         var state by mutableStateOf(habit)
         compose.setContent {
@@ -45,6 +67,9 @@ class HabitFrontendTest {
         compose.onRoot().captureRoboImage(filePath = "build/reports/habitocto/card-light.png")
     }
 
+    // Robolectric #8460: tamaño forzado + TextField en Dialog puede oscilar en medición.
+    // Las demás pruebas conservan la pantalla estrecha; esta comprueba la entrada numérica.
+    @Config(qualifiers = "xhdpi", sdk = [36])
     @Test fun `progress supports large quantities and rejects invalid values`() {
         var saved = -1
         compose.setContent {
@@ -76,7 +101,8 @@ class HabitFrontendTest {
         val summary = HabitTracking.summary(rows, setOf("h"), today)
         compose.setContent {
             MyApplicationTheme(darkTheme = false) {
-                Column(modifier = Modifier.verticalScroll(rememberScrollState()).padding(8.dp)) {
+                Column(modifier = Modifier.background(androidx.compose.material3.MaterialTheme.colorScheme.background)
+                    .verticalScroll(rememberScrollState()).padding(8.dp)) {
                     ProfileHeaderSection(UserEntity("u", "Mi nombre", createdDay = today), summary)
                     PersonalStatsSection(summary)
                 }

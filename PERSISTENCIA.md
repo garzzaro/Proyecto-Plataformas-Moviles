@@ -34,7 +34,7 @@ Los hábitos eliminados se archivan, conservando sus registros. Los contadores, 
 
 ## Pantallas y datos reales
 
-Al abrir la aplicación después de esta actualización, se importan una sola vez los 11 hábitos originales, sus estados y avances actuales, las 12 entradas de historial y las 4 publicaciones con sus respectivos autores, imágenes y reacciones. Dos hábitos que solo figuraban en el historial se guardan archivados, sin añadirlos a la rutina activa. Las antiguas listas de las pantallas delegan en `OriginalHabitData`; las pantallas continúan leyendo su estado desde Room.
+Al abrir la aplicación después de esta actualización, se importan una sola vez los 11 hábitos originales, sus estados y avances actuales, las 12 entradas de historial y las 4 publicaciones con sus respectivos autores, imágenes y reacciones. Dos hábitos que solo figuraban en el historial se guardan archivados, sin añadirlos a la rutina activa. Los datos originales se importan desde `OriginalHabitData` en el repositorio; las pantallas leen únicamente el estado derivado de Room.
 
 La importación se aplica en una transacción y registra la marca `original-project-data-v1`. Volver a ejecutar la aplicación no duplica los datos, no reinicia avances y no restaura hábitos que se hayan archivado después de la carga. Si ya existe un hábito equivalente, se conserva su definición y su progreso, y se evitan registros con períodos solapados. Los datos y el perfil personalizados se mantienen. El nombre y avatar del perfil original solo se incorporan si el perfil todavía conserva sus valores iniciales.
 
@@ -69,6 +69,10 @@ En Android Studio se pueden ejecutar `HabitTrackingTest`, `HabitViewModelTest`, 
 .\gradlew.bat :app:testDebugUnitTest --tests "com.example.Habit*"
 ```
 
-Resultados en esta sesión: compilación directa de todo el Kotlin y del código generado por Room; generación y validación de las consultas de Room con KSP; 21 pruebas de lógica, ViewModel e importación aprobadas; 20 comprobaciones SQLite de migración e integridad aprobadas, comparando el esquema migrado con el generado por Room y conservando los datos de la versión 1. Los cinco archivos de pruebas compilan.
+La validación histórica del ZIP recibido describía limitaciones de compilación. Para los resultados de esta actualización de Fase 2, consultar [docs/VALIDACION.md](docs/VALIDACION.md), que registra la ejecución real de Gradle y las pruebas actuales. No deben interpretarse las cifras históricas como pruebas ejecutadas por el equipo.
 
-La compilación completa con Gradle y las pruebas Android/Robolectric con capturas no pudieron ejecutarse en esta sesión por restricciones de acceso a archivos internos de Gradle y recursos Android. Se intentó la compilación con los recursos disponibles; no se cambiaron las versiones ni las rutas del SDK del proyecto. Queda pendiente ejecutar esos dos grupos de pruebas y revisar las capturas desde Android Studio antes de dar por validada la apariencia en un dispositivo.
+## Arquitectura completada en Fase 2
+
+`di/AppContainer` construye Room y el repositorio. El ViewModel recibe solo el contrato `HabitRepository`. `MainUiState` expone carga, vacío, éxito y error mediante `dataState`; un error inicial detiene la carga y permite reintentar. Los errores de guardado conservan el formulario abierto.
+
+El formulario emite `HabitDraft`; su validación y transformación están fuera del Composable. Editar conserva identificador, unidad de progreso y color. Se añadieron pruebas para los cuatro estados, reintento, borradores inválidos, invalidaciones de Room y migración desde el esquema publicado de la versión 1.

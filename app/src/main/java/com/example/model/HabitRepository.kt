@@ -140,6 +140,8 @@ class RoomHabitRepository(
     override suspend fun save(habit: HabitItem, today: Long): Unit = db.withTransaction {
         require(habit.title.isNotBlank()) { "Escribe un nombre para el hábito" }
         require(!habit.isProgressive || habit.maxProgress > 0) { "La meta debe ser mayor que cero" }
+        require(habit.frequency in setOf("Diario", "Semanal")) { "Selecciona una frecuencia diaria o semanal" }
+        require(Regex("([01][0-9]|2[0-3]):[0-5][0-9]").matches(habit.reminderTime)) { "Usa una hora válida en formato HH:mm" }
         materialize(today)
         require(dao.habitOwner(habit.id)?.userId.let { it == null || it == userId }) { "Este hábito pertenece a otro perfil" }
         val old = dao.habit(habit.id, userId)
