@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "253722664462",
+    "project_id": "habitocto-suchini-2026",
+    "storage_bucket": "habitocto-suchini-2026.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:253722664462:android:4d3698061d81c01f1b265f",
+        "android_client_info": {
+          "package_name": "com.aistudio.habitocto.profile"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBUCdjgoiF41xVw7rir3YKpWwEVvxPF7eM"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
