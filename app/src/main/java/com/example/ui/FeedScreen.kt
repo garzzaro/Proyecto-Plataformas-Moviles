@@ -596,12 +596,19 @@ fun FeedScreen(
 }
 
 /**
- * FeedPostCard dibuja la tarjeta visual de una publicación individual en el feed.
+ * FeedPostCard dibuja la tarjeta visual interactiva de una publicación individual en el muro social.
  *
- * - Muestra la etiqueta de expiración (`⏳ Xd restantes`, máximo 7 días).
- * - Solo si `post.isOwnPost == true`, muestra el botón de papelera roja para eliminar la publicación
- *   junto con todos sus comentarios y likes tras confirmar en un `AlertDialog`.
- * - Incluye sección interactiva de comentarios y botón real de compartir (`Intent.ACTION_SEND`).
+ * - **¿Para qué sirve?** Presenta la información de un logro compartido: autor, avatar optimizado, insignia de categoría,
+ *   tiempo restante de retención (máximo 7 días), contenido textual, fotografía opcional, contador de likes, lista de comentarios
+ *   y acciones seguras de borrado para publicaciones propias.
+ * - **¿Cómo funciona?**
+ *   1. Muestra una insignia dinámica con el tiempo que le queda a la publicación antes de expirar a los 7 días.
+ *   2. Si `post.isOwnPost == true`, habilita el botón de papelera con diálogo de confirmación [AlertDialog] que borra permanentemente
+ *      el post junto con sus comentarios y reacciones.
+ *   3. Despliega un acordeón expandible para ver y redactar comentarios en tiempo real.
+ *   4. Integra un botón de compartir que despacha un intent implícito del sistema (`Intent.ACTION_SEND`).
+ * - **¿Qué pasa si lo quitamos?** Las publicaciones del muro no se renderizarían ni se podría interactuar con ellas
+ *   (dar me gusta, comentar, compartir o eliminar posts propios).
  */
 @Composable
 fun FeedPostCard(

@@ -169,13 +169,16 @@ data class SyncedUserProfile(
  * CloudSyncManager gestiona la autenticación persistente multi-cuenta y la sincronización
  * en tiempo real entre múltiples dispositivos mediante códigos únicos de 3 dígitos (#100 a #999).
  *
- * Arquitectura Dual Cloud + Realtime REST Sync:
- * 1. Detecta de forma segura si `FirebaseApp.getApps(context)` está inicializado sin crashear jamás
- *    cuando `google-services.json` no está presente en compilaciones locales.
- * 2. Sincroniza perfiles publicados mediante `OkHttpClient` contra endpoints REST JSON compartidos
- *    y caché persistente en `SharedPreferences` + `Room`.
- * 3. Provee un directorio determinista e interactivo para todos los códigos `#100` a `#999` y
- *    soporte de tokens de sincronización instantánea para compartir por WhatsApp o portapapeles.
+ * - **¿Para qué sirve?** Permite que múltiples compañeros o usuarios descarguen la app, cada uno tenga su cuenta
+ *   independiente con su propio código de amigo (#XXX), puedan agregarse mutuamente y compitan en el Ranking en tiempo real.
+ * - **¿Cómo funciona?**
+ *   1. Arquitectura Dual Cloud: Detecta dinámicamente si Firebase está inicializado (`FirebaseApp.getApps`); si está activo,
+ *      sincroniza con Firestore. Si el compañero compila sin `google-services.json`, conmuta sin errores al relay REST HTTP
+ *      y al directorio determinista local con persistencia en SharedPreferences y Room.
+ *   2. Genera o asigna un código de 3 dígitos (#100..#999) único a cada perfil.
+ *   3. Mantiene corrutinas en segundo plano para actualizar amigos y rankings automáticamente.
+ * - **¿Qué pasa si lo quitamos?** Todos los usuarios que descarguen el APK compartirían un perfil estático local sin poder
+ *   agregarse como amigos, sin códigos de identificación y sin sincronización de ranking en tiempo real.
  */
 class CloudSyncManager(context: Context) {
 
@@ -333,7 +336,12 @@ class CloudSyncManager(context: Context) {
     }
 
     /**
-     * Versión no bloqueante para iniciar sesión o registrarse desde callbacks de UI.
+     * Versión asíncrona no bloqueante para iniciar sesión o registrarse desde callbacks de Jetpack Compose.
+     *
+     * - **¿Para qué sirve?** Crea o autentica la cuenta del usuario en segundo plano sin congelar la interfaz gráfica.
+     * - **¿Cómo funciona?** Genera inmediatamente una sesión local activa, persiste los datos en Room y SharedPreferences,
+     *   ejecuta la sincronización en la nube con `Dispatchers.IO` y notifica mediante el callback `onComplete`.
+     * - **¿Qué pasa si lo quitamos?** El registro o inicio de sesión bloquearía el hilo principal de la UI (ANR).
      */
     fun loginOrRegisterAsync(
         name: String,
@@ -378,6 +386,11 @@ class CloudSyncManager(context: Context) {
 
     /**
      * Continúa con una sesión previamente guardada en este dispositivo.
+     *
+     * - **¿Para qué sirve?** Permite al usuario reingresar de inmediato a su cuenta guardada sin tener que volver a escribir su nombre o correo.
+     * - **¿Cómo funciona?** Carga la sesión desde el historial persistido, actualiza la marca de tiempo, reactiva la sesión en Room
+     *   y notifica a los StateFlows reactivos de la aplicación.
+     * - **¿Qué pasa si lo quitamos?** Cada vez que el usuario abra la app tendría que registrarse de nuevo desde cero.
      */
     fun continueWithSavedSession(
         session: AuthSession? = null,
@@ -653,7 +666,12 @@ class CloudSyncManager(context: Context) {
     }
 
     /**
-     * Versión con callback para usar directamente desde botones de UI en Compose.
+     * Agrega a un compañero como amigo mediante su código (#XXX) de forma asíncrona.
+     *
+     * - **¿Para qué sirve?** Permite conectar dos dispositivos para que los compañeros se vean mutuamente en el Ranking y en el feed.
+     * - **¿Cómo funciona?** Normaliza el código ingresado (ej. "#105" -> "105"), consulta Firebase Firestore, el relay REST y el directorio
+     *   local, guarda el amigo en la lista persistida y despacha el resultado en el hilo principal (`Dispatchers.Main`).
+     * - **¿Qué pasa si lo quitamos?** El usuario no podría añadir amigos ni competir en el Ranking social.
      */
     fun addFriendByCodeAsync(
         rawCodeOrToken: String,
@@ -726,6 +744,11 @@ class CloudSyncManager(context: Context) {
 
     /**
      * Construye la lista completa y ordenada del Ranking combinando amigos sincronizados + usuario actual.
+     *
+     * - **¿Para qué sirve?** Genera la tabla de posiciones con medallas (oro, plata, bronce) para gamificar la consistencia de hábitos.
+     * - **¿Cómo funciona?** Fusiona el perfil del usuario actual con todos sus amigos añadidos, calcula los puntos (XP) basados
+     *   en hábitos completados y días de racha, ordena descendentemente y asigna las posiciones del 1 al N.
+     * - **¿Qué pasa si lo quitamos?** La pantalla de Ranking aparecería vacía o desincronizada respecto a los logros de los amigos.
      */
     fun buildRealtimeRanking(
         currentUserName: String,

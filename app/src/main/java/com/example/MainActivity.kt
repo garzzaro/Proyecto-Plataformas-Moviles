@@ -389,8 +389,14 @@ fun HabitOctoMainApp(
 
     val syncManager = remember { CloudSyncManager.getInstance(context) }
 
-    // Launcher de permisos de notificaciones para Android 13+ y programador periódico de recordatorios
-
+    // =========================================================================
+    // GESTIÓN DE PERMISOS DE NOTIFICACIONES (Android 13+ / API 33+) Y RECORDATORIOS
+    // - ¿Para qué sirve? Solicita el permiso POST_NOTIFICATIONS en tiempo de ejecución
+    //   para permitir que HabitOcto envíe recordatorios periódicos de hábitos a la barra de estado.
+    // - ¿Cómo funciona? Utiliza rememberLauncherForActivityResult con RequestPermission();
+    //   si el usuario concede el permiso, arranca el temporizador de corrutina de HabitNotificationScheduler.
+    // - ¿Qué pasa si lo quitamos? En Android 13+ las alertas se silenciarían y no llegarían recordatorios.
+    // =========================================================================
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
 
         ActivityResultContracts.RequestPermission()
@@ -1246,7 +1252,7 @@ fun HabitOctoMainApp(
                                                 .fillMaxWidth()
 
                                                 .clickable {
-
+                                                    // Prueba inmediata de envío de recordatorio al tocar la tarjeta
                                                     HabitNotificationScheduler.sendReminder(context = context, isEnglish = isEnglish)
 
                                                     Toast.makeText(

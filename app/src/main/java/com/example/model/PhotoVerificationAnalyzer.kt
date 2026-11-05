@@ -34,6 +34,17 @@ data class PhotoVerificationResult(
 /**
  * PhotoVerificationAnalyzer analiza una foto en memoria RAM para verificar un microhábito o
  * desbloquear el Modo Enfoque y la descarta de inmediato (0 bytes en Room y 0 archivos en disco).
+ *
+ * - **¿Para qué sirve?** Proporciona un motor de visión ligero embebido en la aplicación que certifica
+ *   que la imagen capturada por el usuario contiene iluminación, bordes y variedad cromática reales,
+ *   sin almacenar imágenes en la base de datos local (Room) ni saturar Firestore.
+ * - **¿Cómo funciona?**
+ *   1. Muestrea la imagen a una cuadrícula en memoria de 64x64 píxeles para calcular luminosidad ponderada (ITU-R BT.601).
+ *   2. Mide la varianza de color (desviación estándar en RGB) y la densidad de gradientes espaciales (nitidez de bordes).
+ *   3. Determina validez y porcentaje de confianza (82%-99%).
+ *   4. Destruye y recicla inmediatamente el Bitmap (`recycle()`), garantizando 0 bytes retenidos.
+ * - **¿Qué pasa si lo quitamos?** La aplicación tendría que guardar miles de fotografías en disco y BD para verificar
+ *   hábitos, saturando el almacenamiento del dispositivo y la cuota de la nube.
  */
 object PhotoVerificationAnalyzer {
 
@@ -42,6 +53,14 @@ object PhotoVerificationAnalyzer {
     /**
      * Analiza un [Bitmap] en memoria RAM mediante una matriz ligera de `64x64` píxeles y descarta
      * el bitmap temporal sin guardar nada en disco ni en la base de datos Room.
+     *
+     * - **¿Para qué sirve?** Inspecciona métricas de calidad de imagen (luz, bordes, contraste) directamente desde un Bitmap.
+     * - **¿Cómo funciona?**
+     *   1. Escala el bitmap a `64x64` y extrae el arreglo lineal de píxeles ARGB.
+     *   2. Recicla el bitmap escalado inmediatamente.
+     *   3. Itera sobre los píxeles calculando luminosidad media, varianza RGB y gradientes entre vecinos.
+     *   4. Asigna un dictamen legible en español e inglés junto con el porcentaje de confianza.
+     * - **¿Qué pasa si lo quitamos?** No se podría validar la captura directa de la cámara para micro-hábitos ni modo enfoque.
      */
     fun analyzeBitmapAndDiscard(
         bitmap: Bitmap?,
@@ -185,6 +204,13 @@ object PhotoVerificationAnalyzer {
     /**
      * Decodifica un thumbnail ligero en memoria desde [uri] (`inSampleSize = 4`), ejecuta
      * [analyzeBitmapAndDiscard] y recicla el bitmap inmediatamente sin guardar nada en disco ni Room.
+     *
+     * - **¿Para qué sirve?** Permite analizar imágenes provenientes del selector de la galería del dispositivo sin desbordar la memoria heap.
+     * - **¿Cómo funciona?**
+     *   1. Utiliza `inSampleSize = 4` al decodificar el stream del ContentResolver para cargar solo 1/16 de los píxeles en memoria.
+     *   2. Delega la inspección matemática a [analyzeBitmapAndDiscard].
+     *   3. Libera y recicla el bitmap decodificado (`bitmap.recycle()`) antes de retornar el resultado.
+     * - **¿Qué pasa si lo quitamos?** Seleccionar una fotografía de alta resolución desde la galería causaría un error de memoria insuficiente (`OutOfMemoryError`).
      */
     fun analyzeUriAndDiscard(
         context: Context,

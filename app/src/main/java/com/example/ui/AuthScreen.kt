@@ -100,10 +100,14 @@ import kotlinx.coroutines.launch
 /**
  * Pantalla elegante de Inicio de Sesión, Registro Multi-Usuario y Foto Optimizada por Dispositivo para HabitOcto.
  *
- * - Permite registrar una cuenta nueva (ideal cuando se comparte el APK o alguien clona el repo)
- *   o iniciar sesión con Nombre, Correo, Foto de Perfil Optimizada y Tag único de 3 dígitos (`#100` a `#999`).
- * - Ofrece acceso directo a "Continuar con sesión guardada en este dispositivo" (persistida en Room y SharedPreferences).
- * - Sincroniza el perfil automáticamente con [CloudSyncManager] (Firebase Cloud Firestore `habitocto-suchini-2026` + Realtime REST Sync).
+ * - **¿Para qué sirve?** Brinda una interfaz intuitiva para que cualquier persona que instale el APK cree su propia cuenta
+ *   personalizada, elija su foto de perfil optimizada con [ImageOptimizer], obtenga su código único (#100..#999) o alterne entre cuentas guardadas.
+ * - **¿Cómo funciona?**
+ *   1. Permite alternar entre pestañas de "Iniciar Sesión" y "Crear Cuenta".
+ *   2. Integra selector de foto de perfil con compresión y recorte automático en formato cuadrado 384x384.
+ *   3. Despliega la lista de cuentas guardadas en el dispositivo para conmutar de usuario con un solo toque.
+ *   4. Persiste la sesión en Room y SharedPreferences mediante [CloudSyncManager] y sincroniza con Firestore/REST.
+ * - **¿Qué pasa si lo quitamos?** Los nuevos usuarios no podrían registrarse ni personalizar su perfil, obligando a todos a compartir una única cuenta anónima.
  */
 @Composable
 fun AuthScreen(
@@ -909,7 +913,11 @@ fun AuthScreen(
 }
 
 /**
- * Modal de Autenticación y Cambio de Cuenta para mostrar sobre cualquier pantalla de HabitOcto.
+ * Modal de Autenticación y Cambio de Cuenta para desplegarse sobre cualquier pantalla de HabitOcto.
+ *
+ * - **¿Para qué sirve?** Permite abrir la pantalla de autenticación en formato de diálogo superpuesto desde el Perfil o TopBar.
+ * - **¿Cómo funciona?** Envuelve a [AuthScreen] dentro de un [Dialog] de Jetpack Compose con fondo difuminado y bordes redondeados.
+ * - **¿Qué pasa si lo quitamos?** Para cambiar de cuenta o iniciar sesión habría que navegar fuera del flujo actual perdiendo el estado visual.
  */
 @Composable
 fun AuthModalDialog(
@@ -953,8 +961,11 @@ fun AuthModalDialog(
 }
 
 /**
- * Diálogo explicativo sobre cómo funciona el sistema multi-cuenta cuando se comparte el APK
- * con un amigo o cuando alguien descarga/clona el repositorio en Android.
+ * Diálogo interactivo de incorporación (Onboarding) para nuevos usuarios y compañeros de clase.
+ *
+ * - **¿Para qué sirve?** Explica de manera didáctica y visual cómo funciona HabitOcto cuando se comparte el APK o se clona el repositorio de GitHub.
+ * - **¿Cómo funciona?** Detalla los 4 pasos clave: 1) Cuenta única con código #XXX, 2) Amigos y Ranking, 3) Feed social con fotos optimizadas y 4) Modo Enfoque inmersivo.
+ * - **¿Qué pasa si lo quitamos?** Los compañeros que descarguen el proyecto no entenderían cómo ingresar con su propio perfil ni cómo agregar amigos.
  */
 @Composable
 fun AccountOnboardingGuideDialog(
@@ -1145,11 +1156,13 @@ fun AccountOnboardingGuideDialog(
 }
 
 /**
- * Tarjeta para la pestaña de `Profile` que muestra claramente el Tag `#XXX` del usuario,
- * el estado de sincronización en vivo, la guía para amigos que descarguen el APK/repo y los botones de:
- * - "Copiar mi #Código"
- * - "Compartir con amigos"
- * - "Crear Mi Cuenta / Cambiar Usuario"
+ * Tarjeta de identidad en la nube y código de amigo (#XXX) para la pestaña de Perfil.
+ *
+ * - **¿Para qué sirve?** Muestra de forma destacada el código personal de 3 dígitos del usuario, el estado de conexión con Firebase/REST
+ *   y las acciones para copiar el código al portapapeles o compartirlo vía WhatsApp/Telegram.
+ * - **¿Cómo funciona?** Observa los `StateFlow` de [CloudSyncManager], renderiza una tarjeta con gradiente teal y expone accesos directos
+ *   al portapapeles de Android (`ClipboardManager`) y diálogos de incorporación.
+ * - **¿Qué pasa si lo quitamos?** El usuario no conocería su propio código de amigo (#XXX) ni tendría forma de compartirlo con sus compañeros.
  */
 @Composable
 fun ProfileCloudTagCard(

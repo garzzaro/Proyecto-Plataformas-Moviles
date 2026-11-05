@@ -53,6 +53,16 @@ object ImageOptimizer {
     /**
      * Optimiza una imagen proveniente de un [Uri] (galería o selector de archivos) y la persiste
      * comprimida en el almacenamiento interno de la aplicación (`filesDir/optimized_media`).
+     *
+     * - **¿Para qué sirve?** Toma cualquier imagen seleccionada por el usuario, reduce drásticamente su tamaño
+     *   (hasta un 85-95% menos) y genera un archivo JPEG local optimizado para avatares o posts del Feed.
+     * - **¿Cómo funciona?**
+     *   1. Lee los metadatos de tamaño y resolución mediante `inJustDecodeBounds = true` sin alocar memoria para los píxeles.
+     *   2. Calcula el factor `inSampleSize` como potencia de 2 para submuestrear la imagen durante la decodificación.
+     *   3. Aplica recorte cuadrado centrado (`384x384`) para fotos de perfil o reescala proporcional (`1024px`) para feed.
+     *   4. Comprime en JPEG calibrado (80%-82% de calidad) y almacena en el directorio interno de la app.
+     * - **¿Qué pasa si lo quitamos?** Subir una fotografía de 10-15 MB directamente desde la cámara o galería
+     *   provocaría errores `OutOfMemoryError` en el renderizado y saturaría el almacenamiento del dispositivo.
      */
     fun optimizeImageFromUri(
         context: Context,
@@ -114,6 +124,13 @@ object ImageOptimizer {
     /**
      * Optimiza un [Bitmap] en memoria (por ejemplo, capturado con la cámara) y lo guarda
      * comprimido en `filesDir/optimized_media`.
+     *
+     * - **¿Para qué sirve?** Procesa bitmaps directos en memoria RAM generados por cámaras o previews
+     *   para convertirlos en archivos JPEG persistidos y livianos.
+     * - **¿Cómo funciona?** Estima el tamaño original, realiza el recorte/escalado geométrico según sea avatar
+     *   o post y escribe el archivo JPEG en almacenamiento local seguro.
+     * - **¿Qué pasa si lo quitamos?** Las imágenes generadas en memoria no podrían persistirse eficientemente
+     *   ni asociarse a la entidad del usuario o publicación.
      */
     fun optimizeBitmapToInternalFile(
         context: Context,
@@ -209,6 +226,13 @@ object ImageOptimizer {
 
     /**
      * Calcula el factor `inSampleSize` como potencia de 2 para acercarse a [maxDimension].
+     *
+     * - **¿Para qué sirve?** Instruye al decodificador de imágenes de Android (`BitmapFactory`) para que submuestree
+     *   la imagen mientras lee el stream desde el disco, ahorrando memoria RAM.
+     * - **¿Cómo funciona?** Compara el lado mayor con la dimensión máxima deseada y multiplica por 2 el divisor
+     *   mientras la mitad del lado siga superando el límite.
+     * - **¿Qué pasa si lo quitamos?** El sistema decodificaría la imagen en su resolución completa original,
+     *   agotando la memoria heap en imágenes de cámaras de 50 o 100 megapíxeles.
      */
     fun calculateInSampleSize(rawWidth: Int, rawHeight: Int, maxDimension: Int): Int {
         if (rawWidth <= 0 || rawHeight <= 0 || maxDimension <= 0) return 1
@@ -247,6 +271,11 @@ object ImageOptimizer {
     /**
      * Formatea un resumen legible del resultado de optimización en español o inglés.
      * Ejemplo: `"Optimizada: 2.4 MB → 118 KB (-95%)"`
+     *
+     * - **¿Para qué sirve?** Muestra al usuario de manera transparente el impacto positivo del módulo
+     *   de optimización de imágenes en el ahorro de almacenamiento.
+     * - **¿Cómo funciona?** Convierte los bytes iniciales y finales a cadenas legibles (KB/MB) y añade el porcentaje ahorrado.
+     * - **¿Qué pasa si lo quitamos?** La interfaz no podría retroalimentar el ahorro de espacio al subir fotos.
      */
     fun formatSizeLabel(result: ImageOptimizationResult, isEnglish: Boolean = false): String {
         val prefix = if (isEnglish) "Optimized" else "Optimizada"
