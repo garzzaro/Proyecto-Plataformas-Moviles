@@ -239,7 +239,7 @@ fun AddHabitScreen(
                     )
                 }
 
-                // Campo 2: Selector horizontal de categorías
+                // Campo 2: Selector y escritura personalizada de categorías
                 Column {
                     Text(
                         text = stringResource(R.string.categor_a),
@@ -247,6 +247,26 @@ fun AddHabitScreen(
                         fontWeight = FontWeight.Bold,
                         color = TextDark
                     )
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    OutlinedTextField(
+                        value = selectedCategory,
+                        onValueChange = { selectedCategory = it },
+                        placeholder = { Text("Escribe una categoría personalizada o elige abajo...", color = TextGray) },
+                        label = { Text("Categoría del Hábito", fontSize = 12.sp) },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        shape = RoundedCornerShape(12.dp),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedContainerColor = CardWhite,
+                            unfocusedContainerColor = CardWhite,
+                            focusedBorderColor = MaterialTheme.colorScheme.primary,
+                            unfocusedBorderColor = BorderGrayLight,
+                            focusedTextColor = TextDark,
+                            unfocusedTextColor = TextDark
+                        )
+                    )
+
                     Spacer(modifier = Modifier.height(10.dp))
 
                     LazyRow(
@@ -483,7 +503,7 @@ fun AddHabitScreen(
                     Spacer(modifier = Modifier.width(8.dp))
 
                     HabitImage(
-                        model = "https://raw.githubusercontent.com/garzzaro/Proyecto-Plataformas-Moviles/feature/lab2-lazy-list/app/src/main/res/drawable/pulpo.avif",
+                        model = com.example.R.drawable.ic_pulpo,
                         contentDescription = "Mascota Octo",
                         modifier = Modifier
                             .size(60.dp)

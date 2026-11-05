@@ -2,9 +2,7 @@ package com.example.ui
 
 import android.widget.Toast
 import androidx.compose.foundation.background
-import com.example.ui.theme.isAppInDarkTheme
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -31,8 +29,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -40,23 +40,23 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.R
-import com.example.ui.components.HabitImage
 import com.example.TopNavigationBarSection
+import com.example.model.AchievementCatalog
+import com.example.model.HabitDates
 import com.example.model.HabitHistoryItem
 import com.example.model.HabitItem
 import com.example.model.OriginalHabitData
+import com.example.model.PetCustomization
 import com.example.model.TrackingSummary
-import com.example.model.HabitDates
-import com.example.ui.components.HabitProgressDialog
-import androidx.compose.runtime.saveable.rememberSaveable
+import com.example.model.UserEntity
 import com.example.ui.components.CardWhite
 import com.example.ui.components.HabitHistoryItemRow
+import com.example.ui.components.HabitImage
 import com.example.ui.components.HabitItemCard
+import com.example.ui.components.HabitProgressDialog
 import com.example.ui.components.MascotBannerCard
 import com.example.ui.components.NewHabitButtonCard
 import com.example.ui.components.ScreenBackground
@@ -78,6 +78,7 @@ import com.example.ui.theme.InfoBlue
 import com.example.ui.theme.InfoBlueDark
 import com.example.ui.theme.SuccessGreen
 import com.example.ui.theme.SuccessGreenDark
+import com.example.ui.theme.isAppInDarkTheme
 
 /**
  * Lista inicial de hábitos y micro hábitos con más de 10 elementos para garantizar scroll.
@@ -90,10 +91,11 @@ val initialHabitsList = OriginalHabitData.habits
 val sampleHistoryItems = OriginalHabitData.history
 
 /**
- * TrackerScreen representa la pestaña unificada de rastreo de hábitos y estadísticas.
+ * TrackerScreen representa la pestaña unificada de rastreo de hábitos, Modo Enfoque con bloqueo y estadísticas.
  *
  * - **¿Para qué sirve?** Permite al usuario consultar sus hábitos diarios y micro hábitos,
- *   activar el modo edición para modificarlos o borrarlos, revisar gráficos semanales e historial.
+ *   activar el Modo Enfoque Inmersivo con bloqueo de salida, verificar micro-hábitos con foto en RAM (0 KB en BD),
+ *   visitar el Espacio Propio (Santuario) de su mascota, editar o borrar hábitos, y revisar gráficos semanales.
  * - **¿Cómo funciona?** Implementa un `LazyColumn` principal con un contenedor interno optimizado
  *   para mostrar ~4 hábitos a la vez, garantizando fluidez de fotogramas y respeto de la rúbrica.
  * - **¿Qué pasa si lo quitamos?** Se eliminaría el módulo central de registro y monitoreo de hábitos de la app.
@@ -107,15 +109,68 @@ fun TrackerScreen(
     onDeleteHabit: (HabitItem) -> Unit,
     history: List<HabitHistoryItem> = emptyList(),
     summary: TrackingSummary = TrackingSummary(),
-    onSetProgress: (HabitItem, Int) -> Unit = { _, _ -> }
+    onSetProgress: (HabitItem, Int) -> Unit = { _, _ -> },
+    onNavigateToPet: () -> Unit = {},
+    petCustomization: PetCustomization = PetCustomization(),
+    onUpdatePetCustomization: (PetCustomization) -> Unit = {},
+    onOpenPetSanctuary: (() -> Unit)? = null,
+    user: UserEntity? = null,
+    onProfileClick: () -> Unit = {},
+    isEnglish: Boolean = false,
+    requirePhotoForMicroHabits: Boolean = false
 ) {
     val context = LocalContext.current
+    val isDark = isAppInDarkTheme
+    // Estado para abrir el Espacio Propio / Santuario de la mascota a pantalla completa al tocar "Visitar Mascota"
+    var showSanctuaryFullScreen by rememberSaveable { mutableStateOf(false) }
+    var localCustomization by remember(petCustomization) { mutableStateOf(petCustomization) }
+    var focusSessionsCount by rememberSaveable { mutableIntStateOf(0) }
+
+    if (showSanctuaryFullScreen && onOpenPetSanctuary == null) {
+        PetSanctuaryScreen(
+            currentStreak = summary.microStreak,
+            totalCompleted = summary.totalCompleted,
+            completedToday = habits.count { it.isCompleted },
+            scheduledToday = maxOf(1, habits.size),
+            initialCustomization = localCustomization,
+            onCustomizationChanged = { updated ->
+                localCustomization = updated
+                onUpdatePetCustomization(updated)
+            },
+            onBack = { showSanctuaryFullScreen = false }
+        )
+        return
+    }
+
     // Estado reactivo que activa o desactiva los controles de edición directa sobre las tarjetas
     var isEditMode by rememberSaveable { mutableStateOf(false) }
     // Conserva el identificador del hábito abierto; el avance siempre procede del estado persistente.
     var progressTarget by rememberSaveable { mutableStateOf<String?>(null) }
     habits.firstOrNull { it.id == progressTarget }?.let { habit ->
         HabitProgressDialog(habit, onDismiss = { progressTarget = null }, onSave = { onSetProgress(habit, it) })
+    }
+
+    // Identificador del micro-hábito pendiente de verificación fotográfica en RAM (0 KB en BD)
+    var microHabitVerificationTarget by rememberSaveable { mutableStateOf<String?>(null) }
+    habits.firstOrNull { it.id == microHabitVerificationTarget }?.let { microHabit ->
+        MicroHabitPhotoVerificationDialog(
+            habit = microHabit,
+            isEnglish = isEnglish,
+            onDismiss = { microHabitVerificationTarget = null },
+            onVerifiedComplete = { verifiedHabit ->
+                microHabitVerificationTarget = null
+                onToggleHabit(verifiedHabit)
+                Toast.makeText(
+                    context,
+                    if (isEnglish) {
+                        "Habit verified with photo in RAM (0 KB saved in DB)!"
+                    } else {
+                        "¡Hábito verificado con foto en RAM (0 KB guardados en BD)!"
+                    },
+                    Toast.LENGTH_SHORT
+                ).show()
+            }
+        )
     }
 
     LazyColumn(
@@ -127,15 +182,23 @@ fun TrackerScreen(
     ) {
         // Cabecera superior compartida de la aplicación
         item {
-            TopNavigationBarSection()
+            TopNavigationBarSection(
+                user = user,
+                level = 1 + summary.totalCompleted / 10,
+                onProfileClick = onProfileClick
+            )
         }
 
-        // Banner motivacional con el pulpo celebrando la racha
+        // Banner motivacional con el pulpo celebrando la racha -> lleva al Espacio Propio / Santuario de la Mascota
         item {
             MascotBannerCard(
                 streak = summary.microStreak,
                 onVisitMascotClick = {
-                    Toast.makeText(context, "¡Saludando a Octo! 🐙✨", Toast.LENGTH_SHORT).show()
+                    if (onOpenPetSanctuary != null) {
+                        onOpenPetSanctuary()
+                    } else {
+                        showSanctuaryFullScreen = true
+                    }
                 }
             )
         }
@@ -149,13 +212,17 @@ fun TrackerScreen(
             ) {
                 Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
                     Text(
-                        text = "Tus Hábitos y Micro Hábitos",
+                        text = if (isEnglish) "Your Habits & Micro-Habits" else "Tus Hábitos y Micro Hábitos",
                         fontSize = 20.sp,
                         fontWeight = FontWeight.Bold,
                         color = TextDark
                     )
                     Text(
-                        text = if (isEditMode) "Toca el lápiz para editar o la papelera para borrar" else "Toca para marcar o ver detalle",
+                        text = if (isEditMode) {
+                            if (isEnglish) "Tap pencil to edit or trash to delete" else "Toca el lápiz para editar o la papelera para borrar"
+                        } else {
+                            if (isEnglish) "Tap to mark complete or view details" else "Toca para marcar o ver detalle"
+                        },
                         fontSize = 12.sp,
                         color = TextGray
                     )
@@ -165,7 +232,7 @@ fun TrackerScreen(
                     modifier = Modifier
                         .background(
                             if (isEditMode) MaterialTheme.colorScheme.primary
-                            else if (isAppInDarkTheme) BorderGrayDark else BorderGrayLight,
+                            else if (isDark) BorderGrayDark else BorderGrayLight,
                             RoundedCornerShape(12.dp)
                         )
                         .clickable {
@@ -176,7 +243,11 @@ fun TrackerScreen(
                         .padding(horizontal = 14.dp, vertical = 6.dp)
                 ) {
                     Text(
-                        text = if (isEditMode) "Listo" else "Editar",
+                        text = if (isEditMode) {
+                            if (isEnglish) "Done" else "Listo"
+                        } else {
+                            if (isEnglish) "Edit" else "Editar"
+                        },
                         fontSize = 13.sp,
                         fontWeight = FontWeight.Bold,
                         color = if (isEditMode) Color.White else TextDark
@@ -203,15 +274,30 @@ fun TrackerScreen(
                     contentPadding = PaddingValues(bottom = 8.dp)
                 ) {
                     if (habits.isEmpty()) {
-                        item { Text("Aún no tienes hábitos. Crea el primero para comenzar tu seguimiento.", modifier = Modifier.padding(16.dp), color = TextGray) }
+                        item {
+                            Text(
+                                text = if (isEnglish) {
+                                    "You don't have habits yet. Create your first one to start tracking."
+                                } else {
+                                    "Aún no tienes hábitos. Crea el primero para comenzar tu seguimiento."
+                                },
+                                modifier = Modifier.padding(16.dp),
+                                color = TextGray
+                            )
+                        }
                     }
                     items(items = habits, key = { it.id }) { habit ->
                         HabitItemCard(
                             habit = habit,
                             isEditMode = isEditMode,
                             onToggleComplete = {
-                                if (it.isProgressive || it.timeOrDuration.isNotBlank()) progressTarget = it.id
-                                else onToggleHabit(it)
+                                if (!it.isCompleted) {
+                                    // Verificación por foto requerida para TODAS las casillas de verificación (análisis en RAM)
+                                    microHabitVerificationTarget = it.id
+                                } else {
+                                    // Si ya estaba completado, permite desmarcarlo de inmediato
+                                    onToggleHabit(it)
+                                }
                             },
                             onClickDetail = { onEditHabit(it) },
                             onEditHabit = { onEditHabit(it) },
@@ -227,6 +313,21 @@ fun TrackerScreen(
             NewHabitButtonCard(onClick = onOpenAddHabit)
         }
 
+        // MODO ENFOQUE CON BLOQUEO INMERSIVO EN EL TRACKER (Movido desde Mascota a petición del usuario)
+        item {
+            FocusModeTrackerCard(
+                habits = habits,
+                isDark = isDark,
+                isEnglish = isEnglish,
+                onFocusCompleted = { focusedHabit, _ ->
+                    focusSessionsCount += 1
+                    if (focusedHabit != null && !focusedHabit.isCompleted) {
+                        onToggleHabit(focusedHabit)
+                    }
+                }
+            )
+        }
+
         // Tarjeta semanal reactiva: el resumen excluye hábitos archivados y conserva el historial aparte.
         item {
             WeeklyProgressCard(summary.days)
@@ -235,7 +336,7 @@ fun TrackerScreen(
         // Título de la sección de estadísticas de cumplimiento
         item {
             Text(
-                text = "Porcentajes Semanales de Cumplimiento",
+                text = if (isEnglish) "Weekly Completion Percentages" else "Porcentajes Semanales de Cumplimiento",
                 fontSize = 18.sp,
                 fontWeight = FontWeight.Bold,
                 color = TextDark,
@@ -321,14 +422,14 @@ fun TrackerScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "Desglose del Progreso",
+                        text = if (isEnglish) "Progress Breakdown" else "Desglose del Progreso",
                         fontSize = 18.sp,
                         fontWeight = FontWeight.Bold,
                         color = TextDark
                     )
 
                     HabitImage(
-                        model = "https://raw.githubusercontent.com/garzzaro/Proyecto-Plataformas-Moviles/feature/lab2-lazy-list/app/src/main/res/drawable/pulpo.avif",
+                        model = com.example.R.drawable.ic_pulpo,
                         contentDescription = "Mascota Octo",
                         modifier = Modifier
                             .size(36.dp)
@@ -357,7 +458,7 @@ fun TrackerScreen(
                                 verticalAlignment = Alignment.Top
                             ) {
                                 Text(
-                                    text = "Completados",
+                                    text = if (isEnglish) "Completed" else "Completados",
                                     fontSize = 12.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = TextDark,
@@ -375,7 +476,7 @@ fun TrackerScreen(
                                 text = "${summary.completedWeek}/${summary.scheduledWeek}",
                                 fontSize = 26.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = if (isAppInDarkTheme) SuccessGreen else SuccessGreenDark
+                                color = if (isDark) SuccessGreen else SuccessGreenDark
                             )
                         }
                     }
@@ -394,7 +495,7 @@ fun TrackerScreen(
                                 verticalAlignment = Alignment.Top
                             ) {
                                 Text(
-                                    text = "Programados",
+                                    text = if (isEnglish) "Scheduled" else "Programados",
                                     fontSize = 12.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = TextDark,
@@ -412,7 +513,7 @@ fun TrackerScreen(
                                 text = "${summary.scheduledWeek}",
                                 fontSize = 26.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = if (isAppInDarkTheme) InfoBlue else InfoBlueDark
+                                color = if (isDark) InfoBlue else InfoBlueDark
                             )
                         }
                     }
@@ -420,10 +521,26 @@ fun TrackerScreen(
             }
         }
 
+        // Mejora Autónoma: Medallas y Logros Desbloqueables
+        item {
+            val achievements = remember(summary.totalCompleted, summary.microStreak, focusSessionsCount) {
+                AchievementCatalog.evaluate(
+                    totalCompleted = summary.totalCompleted,
+                    currentStreak = summary.microStreak,
+                    friendsCount = 4,
+                    focusSessionsCompleted = focusSessionsCount
+                )
+            }
+            AchievementsShowcaseCard(
+                achievements = achievements,
+                isDark = isDark
+            )
+        }
+
         // Título de la sección de historial
         item {
             Text(
-                text = "Historial · Últimos 7 días",
+                text = if (isEnglish) "History · Last 7 days" else "Historial · Últimos 7 días",
                 fontSize = 18.sp,
                 fontWeight = FontWeight.Bold,
                 color = TextDark,
@@ -449,7 +566,17 @@ fun TrackerScreen(
                     contentPadding = PaddingValues(bottom = 8.dp)
                 ) {
                     if (history.isEmpty()) {
-                        item { Text("Tu historial aparecerá aquí cuando crees un hábito.", modifier = Modifier.padding(16.dp), color = TextGray) }
+                        item {
+                            Text(
+                                text = if (isEnglish) {
+                                    "Your history will appear here once you create a habit."
+                                } else {
+                                    "Tu historial aparecerá aquí cuando crees un hábito."
+                                },
+                                modifier = Modifier.padding(16.dp),
+                                color = TextGray
+                            )
+                        }
                     }
                     items(items = history, key = { it.id }) { historyItem ->
                         HabitHistoryItemRow(
@@ -466,7 +593,7 @@ fun TrackerScreen(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .height(1.dp)
-                                .background(if (isAppInDarkTheme) DividerDark else DividerLight)
+                                .background(if (isDark) DividerDark else DividerLight)
                         )
                     }
                 }

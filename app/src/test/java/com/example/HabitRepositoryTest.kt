@@ -13,7 +13,6 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
-import java.util.UUID
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [36])
@@ -21,7 +20,7 @@ class HabitRepositoryTest {
     private lateinit var db: HabitDatabase
     private lateinit var repo: RoomHabitRepository
     private lateinit var context: Context
-    private val databaseName = "test-${UUID.randomUUID()}.db"
+    private val databaseName = "t.db"
     private val today = 20_000L
     private fun item(id: String = "h", weekly: Boolean = false) = HabitItem(id, "Tomar agua", "", "Hidratación",
         frequency = if (weekly) "Semanal" else "Diario", isProgressive = true, maxProgress = 8, isMicroHabit = true,
@@ -166,5 +165,53 @@ class HabitRepositoryTest {
         assertEquals("mio@example.com", snapshot.user!!.email)
         assertEquals(12, snapshot.habits.count { it.archivedDay == null })
         assertEquals(4, snapshot.records.single { it.habitId == "custom" }.progress)
+    }
+
+    @Test fun `language avatar comments and own post deletion persist and enforce ownership in Room`() = runBlocking {
+        repo.setLanguage("en")
+        repo.updateProfileWithAvatar("Suchini", "suchini@habitocto.app", "file:///internal/avatar_384.jpg")
+        repo.publish("Mi publicación con foto optimizada", "Fitness", "file:///internal/post_1024.jpg")
+
+        val snapAfterPublish = repo.snapshots.first { it.posts.size == 1 }
+        assertEquals("en", snapAfterPublish.user!!.languageCode)
+        assertEquals("Suchini", snapAfterPublish.user!!.displayName)
+        assertEquals("file:///internal/avatar_384.jpg", snapAfterPublish.user!!.avatarUrl)
+
+        val ownPost = snapAfterPublish.posts.single()
+        repo.addComment(ownPost.id, "Carlos Ruiz", "¡Excelente logro!")
+        repo.addComment(ownPost.id, "Sofía Mendoza", "Sigue así 🔥")
+
+        val snapWithComments = repo.snapshots.first {
+            HabitConverters.decodeComments(it.posts.single().commentsJson).size == 2
+        }
+        val decoded = HabitConverters.decodeComments(snapWithComments.posts.single().commentsJson)
+        assertEquals(2, decoded.size)
+        assertEquals("¡Excelente logro!", decoded[0].content)
+        assertEquals("Sigue así 🔥", decoded[1].content)
+
+        // Insertar un post de otro autor y comprobar que deleteOwnPost lo rechaza
+        db.habits().insertUser(UserEntity(id = "other-author", displayName = "Otro Autor", createdDay = today))
+        db.habits().savePost(
+            FeedPostEntity(
+                id = "foreign-post",
+                userId = "local-user",
+                content = "Post de otro autor",
+                category = "General",
+                imageUrl = null,
+                createdAt = System.currentTimeMillis(),
+                authorId = "other-author"
+            )
+        )
+        try {
+            repo.deleteOwnPost("foreign-post")
+            fail("No debe permitir borrar publicaciones de otros autores")
+        } catch (_: IllegalArgumentException) {
+            // Esperado
+        }
+
+        // Borrar el post propio elimina también sus comentarios y su fila
+        repo.deleteOwnPost(ownPost.id)
+        val afterDelete = repo.snapshots.first { it.posts.size == 1 }
+        assertEquals("foreign-post", afterDelete.posts.single().id)
     }
 }

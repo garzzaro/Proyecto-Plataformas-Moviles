@@ -24,7 +24,7 @@ import kotlinx.coroutines.sync.withLock
 /**
  * MainUiState representa el estado unificado de las pantallas de HabitOcto.
  *
- * - **¿Para qué sirve?** Reúne hábitos, historial, estadísticas, perfil y controles temporales de
+ * - **¿Para qué sirve?** Reúne hábitos, historial, estadísticas, perfil, amigos del ranking, idioma y controles temporales de
  *   navegación y diálogos.
  * - **¿Cómo funciona?** Los datos persistentes proceden del repositorio; selectedTab y los diálogos
  *   controlan la sesión de interfaz.
@@ -34,8 +34,10 @@ import kotlinx.coroutines.sync.withLock
 data class MainUiState(
     val habits: List<HabitItem> = emptyList(),
     val feedPosts: List<FeedPostItem> = emptyList(),
+    val friends: List<FriendEntity> = emptyList(),
     val selectedTab: Int = 0,
     val isDarkMode: Boolean = false,
+    val languageCode: String = "es",
     val isAddHabitDialogOpen: Boolean = false,
     val habitEditingTarget: HabitItem? = null,
     val history: List<HabitHistoryItem> = emptyList(),
@@ -110,11 +112,11 @@ class MainViewModel(private val repository: HabitRepository) : ViewModel() {
     /**
      * render transforma una lectura persistente en datos para las pantallas.
      *
-     * - **¿Para qué sirve?** Reconstruye tarjetas, historial de siete días, publicaciones y
+     * - **¿Para qué sirve?** Reconstruye tarjetas, historial de siete días, publicaciones, amigos y
      *   estadísticas al cargar o recibir cambios.
      * - **¿Cómo funciona?** Separa los hábitos activos para los contadores y conserva todos los
-     *   registros para el historial; actualiza el estado sin reemplazar la pestaña ni el diálogo
-     *   abiertos.
+     *   registros para el historial; filtra publicaciones con máximo 7 días de antigüedad y actualiza
+     *   el estado sin reemplazar la pestaña ni el diálogo abiertos.
      * - **¿Qué pasa si lo quitamos?** La pantalla no podría recuperar el progreso ni reaccionar a la
      *   eliminación de un hábito.
      */
@@ -146,17 +148,54 @@ class MainViewModel(private val repository: HabitRepository) : ViewModel() {
         // El mismo conjunto de identificadores activos alimenta todos los contadores semanales.
         val summary = HabitTracking.summary(data.records, active.map { it.id }.toSet(), today)
         val authors = data.authors.associateBy { it.id }
-        val posts = data.posts.sortedByDescending { it.createdAt }.map { post ->
-            val minutes = ((System.currentTimeMillis() - post.createdAt) / 60_000).coerceAtLeast(0)
-            val author = authors[post.authorId] ?: data.user
-            FeedPostItem(post.id, author?.displayName ?: "Mi perfil", author?.avatarUrl.orEmpty(),
-                post.habitTitle, post.category, post.content,
-                when { minutes < 1 -> "Justo ahora"; minutes < 60 -> "Hace $minutes min"; minutes < 1440 -> "Hace ${minutes / 60} h"; else -> "Hace ${minutes / 1440} días" },
-                post.imageUrl, post.baseLikesCount + if (post.isLiked) 1 else 0, post.isLiked,
-                post.authorStreak ?: summary.microStreak)
+        val now = System.currentTimeMillis()
+        val maxAgeMs = 7L * 24L * 60L * 60L * 1000L
+        val posts = data.posts
+            .filter { now - it.createdAt <= maxAgeMs }
+            .sortedByDescending { it.createdAt }
+            .map { post ->
+                val ageMs = (now - post.createdAt).coerceAtLeast(0L)
+                val minutes = (ageMs / 60_000L).coerceAtLeast(0L)
+                val daysRemaining = (((maxAgeMs - ageMs) / 86_400_000L).toInt() + 1).coerceIn(1, 7)
+                val isOwnPost = post.authorId == null || post.authorId == data.user?.id
+                val author = if (isOwnPost) (data.user ?: authors[post.authorId]) else (authors[post.authorId] ?: data.user)
+                val comments = HabitConverters.decodeComments(post.commentsJson)
+                FeedPostItem(
+                    id = post.id,
+                    authorName = author?.displayName ?: "Mi perfil",
+                    authorAvatarUrl = author?.avatarUrl.orEmpty(),
+                    habitTitle = post.habitTitle,
+                    habitCategory = post.category,
+                    content = post.content,
+                    timeAgo = when {
+                        minutes < 1 -> "Justo ahora"
+                        minutes < 60 -> "Hace $minutes min"
+                        minutes < 1440 -> "Hace ${minutes / 60} h"
+                        else -> "Hace ${minutes / 1440} días"
+                    },
+                    postImageUrl = post.imageUrl,
+                    likesCount = post.baseLikesCount + if (post.isLiked) 1 else 0,
+                    isLiked = post.isLiked,
+                    streakCount = post.authorStreak ?: summary.microStreak,
+                    isOwnPost = isOwnPost,
+                    createdAtMillis = post.createdAt,
+                    daysRemaining = daysRemaining,
+                    comments = comments
+                )
+            }
+        _uiState.update {
+            it.copy(
+                habits = habits,
+                history = history,
+                summary = summary,
+                user = data.user,
+                friends = data.friends,
+                isDarkMode = data.user?.isDarkMode ?: it.isDarkMode,
+                languageCode = data.user?.languageCode ?: it.languageCode,
+                feedPosts = posts,
+                isLoading = data.user == null
+            )
         }
-        _uiState.update { it.copy(habits = habits, history = history, summary = summary, user = data.user,
-            isDarkMode = data.user?.isDarkMode ?: it.isDarkMode, feedPosts = posts, isLoading = data.user == null) }
     }
 
     /**
@@ -206,13 +245,13 @@ class MainViewModel(private val repository: HabitRepository) : ViewModel() {
         _uiState.update { it.copy(error = null) }
     }
 
-    /** Cambia únicamente entre las tres pestañas existentes. */
+    /** Cambia entre las cuatro pestañas principales (0: Tracker, 1: Feed, 2: Mascota/Ranking, 3: Profile). */
     fun selectTab(tabIndex: Int) {
-        if (tabIndex in 0..2) _uiState.update { it.copy(selectedTab = tabIndex) }
+        if (tabIndex in 0..3) _uiState.update { it.copy(selectedTab = tabIndex) }
     }
 
     // ============================================================================
-    // PREFERENCIA DE TEMA
+    // PREFERENCIA DE TEMA E IDIOMA (ES / EN)
     // ============================================================================
 
     fun toggleDarkMode() = write {
@@ -221,6 +260,15 @@ class MainViewModel(private val repository: HabitRepository) : ViewModel() {
 
     fun setDarkMode(enabled: Boolean) = write {
         repository.setDarkMode(enabled)
+    }
+
+    fun setLanguage(languageCode: String) = write {
+        repository.setLanguage(languageCode)
+    }
+
+    fun toggleLanguage() = write {
+        val next = if (_uiState.value.languageCode.equals("en", ignoreCase = true)) "es" else "en"
+        repository.setLanguage(next)
     }
 
     // ============================================================================
@@ -264,7 +312,7 @@ class MainViewModel(private val repository: HabitRepository) : ViewModel() {
     }
 
     // ============================================================================
-    // PUBLICACIONES Y PERFIL LOCAL
+    // PUBLICACIONES, COMENTARIOS, PERFIL, MASCOTA, SESIÓN Y AMIGOS POR #CÓDIGO
     // ============================================================================
 
     fun toggleLike(postId: String) = write {
@@ -277,10 +325,89 @@ class MainViewModel(private val repository: HabitRepository) : ViewModel() {
         _uiState.update { it.copy(publicationVersion = it.publicationVersion + 1) }
     }
 
+    /** Elimina una publicación propia junto con todos sus comentarios y likes. */
+    fun deleteOwnPost(postId: String) = write {
+        repository.deleteOwnPost(postId)
+    }
+
+    /** Añade un comentario a una publicación del Feed. */
+    fun addComment(postId: String, content: String) = write {
+        val author = _uiState.value.user?.displayName ?: "Mi perfil"
+        repository.addComment(postId, author, content)
+    }
+
     /** Ejecuta la confirmación de la pantalla después de persistir el perfil. */
     fun updateProfile(name: String, email: String?, onSaved: () -> Unit = {}) = write {
         repository.updateProfile(name, email)
         onSaved()
+    }
+
+    /** Persiste nombre, correo y avatar optimizado del usuario en Room. */
+    fun updateProfileWithAvatar(
+        name: String,
+        email: String?,
+        avatarUrl: String?,
+        onSaved: () -> Unit = {}
+    ) = write {
+        repository.updateProfileWithAvatar(name, email, avatarUrl)
+        onSaved()
+    }
+
+    /** Actualiza únicamente el avatar optimizado del usuario. */
+    fun updateAvatar(avatarUrl: String?) = write {
+        repository.updateAvatar(avatarUrl)
+    }
+
+    /** Persiste la personalización de mascota (especie, nombre, accesorio y hábitat) en Room. */
+    fun updatePetCustomization(
+        petType: String,
+        petName: String,
+        accessory: String,
+        habitat: String
+    ) = write {
+        repository.updatePetCustomization(
+            petType = petType,
+            petName = petName,
+            accessory = accessory,
+            habitat = habitat
+        )
+    }
+
+    /** Inicia o registra sesión persistente con nombre, correo y código único de 3 dígitos (#XXX). */
+    fun loginOrRegisterUser(
+        name: String,
+        email: String?,
+        friendCode: String,
+        onSaved: () -> Unit = {}
+    ) = write {
+        repository.loginOrRegisterUser(
+            name = name,
+            email = email,
+            friendCode = friendCode
+        )
+        onSaved()
+    }
+
+    /** Cierra la sesión activa en la entidad de usuario local. */
+    fun logoutUser() = write {
+        repository.logoutUser()
+    }
+
+    /** Vincula un amigo por su código de 3 dígitos (#XXX) en Room. */
+    fun addFriendByCode(
+        code: String,
+        name: String? = null,
+        score: Int? = null,
+        habits: Int? = null,
+        streak: Int? = null
+    ) = write {
+        repository.addFriendByCode(
+            code = code,
+            name = name,
+            score = score,
+            habits = habits,
+            streak = streak
+        )
     }
 
     // ============================================================================

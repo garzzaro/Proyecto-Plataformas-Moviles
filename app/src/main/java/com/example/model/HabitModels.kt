@@ -49,6 +49,22 @@ data class HabitHistoryItem(
 )
 
 /**
+ * FeedCommentItem representa un comentario dentro de una publicación del Feed.
+ *
+ * - **¿Para qué sirve?** Permite a los usuarios comentar en publicaciones de hábitos y logros.
+ * - **¿Cómo funciona?** Se almacena serializado dentro de la publicación (`commentsJson` en Room)
+ *   para que al expirar o borrarse la publicación se eliminen también todos sus comentarios.
+ */
+data class FeedCommentItem(
+    val id: String,
+    val postId: String,
+    val authorName: String,
+    val content: String,
+    val timeAgo: String,
+    val createdAt: Long = System.currentTimeMillis()
+)
+
+/**
  * FeedPostItem representa una publicación en el Feed de la comunidad.
  *
  * - **¿Para qué sirve?** Modela las interacciones sociales (logros, hábitos compartidos, comentarios y reacciones).
@@ -66,7 +82,11 @@ data class FeedPostItem(
     val postImageUrl: String? = null, // Imagen adjunta en la publicación del feed
     val likesCount: Int = 0,
     val isLiked: Boolean = false,
-    val streakCount: Int = 0
+    val streakCount: Int = 0,
+    val isOwnPost: Boolean = false,
+    val createdAtMillis: Long = System.currentTimeMillis(),
+    val daysRemaining: Int = 7,
+    val comments: List<FeedCommentItem> = emptyList()
 )
 
 /**

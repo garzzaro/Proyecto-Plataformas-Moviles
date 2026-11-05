@@ -13,6 +13,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.DialogProperties
 import com.example.model.HabitItem
 
 // ============================================================================
@@ -93,6 +94,8 @@ fun HabitProgressDialog(habit: HabitItem, onDismiss: () -> Unit, onSave: (Int) -
     val valid = amount != null && amount in 0..habit.maxProgress
     AlertDialog(
         onDismissRequest = onDismiss,
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp),
+        properties = DialogProperties(usePlatformDefaultWidth = false),
         title = { Text(habit.title) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {

@@ -93,7 +93,7 @@ fun SplashScreen(
                 contentAlignment = Alignment.Center
             ) {
                 HabitImage(
-                    model = "https://raw.githubusercontent.com/garzzaro/Proyecto-Plataformas-Moviles/feature/lab2-lazy-list/app/src/main/res/drawable/pulpo.avif",
+                    model = com.example.R.drawable.ic_pulpo,
                     contentDescription = "Mascota Pulpo HabitOcto",
                     modifier = Modifier
                         .size(144.dp)

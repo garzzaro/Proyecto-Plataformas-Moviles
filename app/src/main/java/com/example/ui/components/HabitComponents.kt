@@ -436,7 +436,7 @@ fun MascotBannerCard(
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         HabitImage(
-            model = "https://raw.githubusercontent.com/garzzaro/Proyecto-Plataformas-Moviles/feature/lab2-lazy-list/app/src/main/res/drawable/pulpo.avif",
+            model = com.example.R.drawable.ic_pulpo,
             contentDescription = "Pulpo HabitOcto",
             modifier = Modifier
                 .size(110.dp)

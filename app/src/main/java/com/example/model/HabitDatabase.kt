@@ -6,6 +6,7 @@ import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import kotlinx.coroutines.flow.Flow
 import org.json.JSONArray
+import org.json.JSONObject
 
 // ============================================================================
 // ENTIDAD DE USUARIO: UserEntity
@@ -14,9 +15,9 @@ import org.json.JSONArray
 /**
  * UserEntity representa el perfil persistente del dispositivo.
  *
- * - **¿Para qué sirve?** Conserva la identidad, los datos del perfil y la preferencia de tema al
- *   cerrar la app.
- * - **¿Cómo funciona?** Room usa id como clave primaria; los hábitos y publicaciones se relacionan con
+ * - **¿Para qué sirve?** Conserva la identidad, los datos del perfil, el código único de amigo (`#XXX`),
+ *   el estado de sesión, la personalización de la mascota y la preferencia de tema al cerrar la app.
+ * - **¿Cómo funciona?** Room usa id como clave primaria; los hábitos, publicaciones y amigos se relacionan con
  *   este usuario.
  * - **¿Qué pasa si lo quitamos?** No habría un propietario estable para los datos ni un perfil
  *   recuperable.
@@ -28,7 +29,45 @@ data class UserEntity(
     val email: String? = null,
     val avatarUrl: String? = null,
     val createdDay: Long,
-    val isDarkMode: Boolean = false
+    val isDarkMode: Boolean = false,
+    @ColumnInfo(defaultValue = "'000'") val friendCode: String = "000",
+    @ColumnInfo(defaultValue = "'octo'") val petType: String = "octo",
+    @ColumnInfo(defaultValue = "'Octo'") val petName: String = "Octo",
+    @ColumnInfo(defaultValue = "'none'") val petAccessory: String = "none",
+    @ColumnInfo(defaultValue = "'aquarium'") val petHabitat: String = "aquarium",
+    @ColumnInfo(defaultValue = "0") val isLoggedIn: Boolean = false,
+    @ColumnInfo(defaultValue = "'es'") val languageCode: String = "es"
+)
+
+// ============================================================================
+// ENTIDAD DE AMIGO SOCIAL: FriendEntity
+// ============================================================================
+
+/**
+ * FriendEntity representa a un amigo vinculado por código de 3 dígitos (`#XXX`) en el ranking social.
+ *
+ * - **¿Para qué sirve?** Persiste la lista de amigos del usuario, su puntaje, hábitos completados,
+ *   racha actual y mascota equipada.
+ * - **¿Cómo funciona?** Se relaciona con `users` mediante `userId` y usa `friendCode` (3 dígitos)
+ *   como clave primaria.
+ * - **¿Qué pasa si lo quitamos?** Los amigos agregados por código se perderían al cerrar la aplicación.
+ */
+@Entity(
+    tableName = "friends",
+    foreignKeys = [ForeignKey(entity = UserEntity::class, parentColumns = ["id"], childColumns = ["userId"], onDelete = ForeignKey.RESTRICT)],
+    indices = [Index("userId")]
+)
+data class FriendEntity(
+    @PrimaryKey val friendCode: String,
+    val userId: String,
+    val displayName: String,
+    val avatarUrl: String? = null,
+    val score: Int,
+    val completedHabits: Int,
+    val currentStreak: Int,
+    @ColumnInfo(defaultValue = "'octo'") val petType: String = "octo",
+    @ColumnInfo(defaultValue = "'none'") val petAccessory: String = "none",
+    val updatedAt: Long
 )
 
 // ============================================================================
@@ -143,7 +182,8 @@ data class FeedPostEntity(
     val authorId: String? = null,
     @ColumnInfo(defaultValue = "0") val baseLikesCount: Int = 0,
     @ColumnInfo(defaultValue = "'Logro personal'") val habitTitle: String = "Logro personal",
-    val authorStreak: Int? = null
+    val authorStreak: Int? = null,
+    @ColumnInfo(defaultValue = "'[]'") val commentsJson: String = "[]"
 )
 
 // ============================================================================
@@ -184,6 +224,51 @@ class HabitConverters {
         val array = JSONArray(value)
         return List(array.length()) { array.getString(it) }
     }
+
+    @TypeConverter fun encodeComments(comments: List<FeedCommentItem>): String = Companion.encodeComments(comments)
+    @TypeConverter fun decodeComments(value: String): List<FeedCommentItem> = Companion.decodeComments(value)
+
+    companion object {
+        fun encodeComments(comments: List<FeedCommentItem>): String {
+            val array = JSONArray()
+            comments.forEach { item ->
+                val obj = JSONObject().apply {
+                    put("id", item.id)
+                    put("postId", item.postId)
+                    put("authorName", item.authorName)
+                    put("content", item.content)
+                    put("timeAgo", item.timeAgo)
+                    put("createdAt", item.createdAt)
+                }
+                array.put(obj)
+            }
+            return array.toString()
+        }
+
+        fun decodeComments(value: String?): List<FeedCommentItem> {
+            if (value.isNullOrBlank()) return emptyList()
+            return try {
+                val array = JSONArray(value)
+                buildList {
+                    for (i in 0 until array.length()) {
+                        val obj = array.optJSONObject(i) ?: continue
+                        add(
+                            FeedCommentItem(
+                                id = obj.optString("id", "comment-$i"),
+                                postId = obj.optString("postId", ""),
+                                authorName = obj.optString("authorName", "Usuario"),
+                                content = obj.optString("content", ""),
+                                timeAgo = obj.optString("timeAgo", "Ahora"),
+                                createdAt = obj.optLong("createdAt", System.currentTimeMillis())
+                            )
+                        )
+                    }
+                }
+            } catch (_: Exception) {
+                emptyList()
+            }
+        }
+    }
 }
 
 // ============================================================================
@@ -193,17 +278,18 @@ class HabitConverters {
 /**
  * UserWithData agrupa el perfil y sus datos relacionados.
  *
- * - **¿Para qué sirve?** Entrega a la pantalla una lectura coherente del usuario, sus hábitos y sus
- *   publicaciones.
+ * - **¿Para qué sirve?** Entrega a la pantalla una lectura coherente del usuario, sus hábitos,
+ *   publicaciones y amigos en el ranking.
  * - **¿Cómo funciona?** Las relaciones de Room se leen mediante una consulta con @Transaction,
- *   incluyendo los registros de cada hábito.
+ *   incluyendo los registros de cada hábito y los amigos agregados por código.
  * - **¿Qué pasa si lo quitamos?** Habría que coordinar consultas separadas con riesgo de mostrar
  *   contadores desactualizados.
  */
 data class UserWithData(
     @Embedded val user: UserEntity,
     @Relation(entity = HabitEntity::class, parentColumn = "id", entityColumn = "userId") val habits: List<HabitWithRecords>,
-    @Relation(entity = FeedPostEntity::class, parentColumn = "id", entityColumn = "userId") val posts: List<PostWithAuthor>
+    @Relation(entity = FeedPostEntity::class, parentColumn = "id", entityColumn = "userId") val posts: List<PostWithAuthor>,
+    @Relation(parentColumn = "id", entityColumn = "userId") val friends: List<FriendEntity> = emptyList()
 )
 
 /**
@@ -239,7 +325,7 @@ data class HabitWithRecords(
 /**
  * HabitDao define las consultas y escrituras autorizadas sobre Room.
  *
- * - **¿Para qué sirve?** Centraliza el acceso a perfiles, hábitos, cumplimientos y publicaciones.
+ * - **¿Para qué sirve?** Centraliza el acceso a perfiles, hábitos, cumplimientos, publicaciones y amigos.
  * - **¿Cómo funciona?** Expone Flow para cambios reactivos y funciones suspend para operaciones de
  *   base de datos fuera de la interfaz.
  * - **¿Qué pasa si lo quitamos?** El repositorio no podría consultar ni persistir los datos de la
@@ -279,6 +365,15 @@ interface HabitDao {
 
     @Query("SELECT r.* FROM habit_records r INNER JOIN habits h ON h.id = r.habitId WHERE h.userId = :userId ORDER BY r.periodStart DESC")
     fun observeRecords(userId: String): Flow<List<HabitRecordEntity>>
+
+    @Query("SELECT * FROM friends WHERE userId = :userId ORDER BY score DESC, updatedAt DESC")
+    fun observeFriends(userId: String): Flow<List<FriendEntity>>
+
+    @Query("SELECT * FROM friends WHERE userId = :userId ORDER BY score DESC, updatedAt DESC")
+    suspend fun friends(userId: String): List<FriendEntity>
+
+    @Query("SELECT * FROM friends WHERE friendCode = :friendCode AND userId = :userId")
+    suspend fun friendByCode(friendCode: String, userId: String): FriendEntity?
 
     @Query("SELECT * FROM habits WHERE userId = :userId AND archivedDay IS NULL")
     suspend fun activeHabits(userId: String): List<HabitEntity>
@@ -321,6 +416,63 @@ interface HabitDao {
 
     @Query("UPDATE users SET displayName = :name, email = :email WHERE id = :userId")
     suspend fun updateProfile(userId: String, name: String, email: String?)
+
+    @Query("UPDATE users SET displayName = :name, email = :email, avatarUrl = :avatarUrl WHERE id = :userId")
+    suspend fun updateProfileWithAvatar(userId: String, name: String, email: String?, avatarUrl: String?)
+
+    @Query("UPDATE users SET avatarUrl = :avatarUrl WHERE id = :userId")
+    suspend fun updateAvatar(userId: String, avatarUrl: String?)
+
+    @Query("UPDATE users SET languageCode = :languageCode WHERE id = :userId")
+    suspend fun updateLanguage(userId: String, languageCode: String)
+
+    @Query("DELETE FROM feed_posts WHERE createdAt < :cutoffMillis")
+    suspend fun deletePostsOlderThan(cutoffMillis: Long)
+
+    @Query("SELECT * FROM feed_posts WHERE id = :id LIMIT 1")
+    suspend fun postById(id: String): FeedPostEntity?
+
+    @Query("DELETE FROM feed_posts WHERE id = :id AND userId = :userId AND (authorId IS NULL OR authorId = :userId)")
+    suspend fun deleteOwnPost(id: String, userId: String): Int
+
+    @Query("UPDATE feed_posts SET commentsJson = :commentsJson WHERE id = :id")
+    suspend fun updatePostComments(id: String, commentsJson: String)
+
+    // ============================================================================
+    // MASCOTA, SESIÓN DE USUARIO Y AMIGOS POR CÓDIGO (#XXX)
+    // ============================================================================
+
+    @Query("UPDATE users SET friendCode = :friendCode WHERE id = :userId")
+    suspend fun updateFriendCode(userId: String, friendCode: String)
+
+    @Query("UPDATE users SET petType = :petType, petName = :petName, petAccessory = :accessory, petHabitat = :habitat WHERE id = :userId")
+    suspend fun updatePetCustomization(
+        userId: String,
+        petType: String,
+        petName: String,
+        accessory: String,
+        habitat: String
+    )
+
+    @Query("UPDATE users SET displayName = :name, email = :email, friendCode = :friendCode, isLoggedIn = 1 WHERE id = :userId")
+    suspend fun loginOrRegisterUser(
+        userId: String,
+        name: String,
+        email: String?,
+        friendCode: String
+    )
+
+    @Query("UPDATE users SET isLoggedIn = 0 WHERE id = :userId")
+    suspend fun logoutUser(userId: String)
+
+    @Upsert
+    suspend fun upsertFriend(friend: FriendEntity)
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertFriends(friends: List<FriendEntity>)
+
+    @Query("DELETE FROM friends WHERE friendCode = :friendCode AND userId = :userId")
+    suspend fun deleteFriend(friendCode: String, userId: String)
 }
 
 // ============================================================================
@@ -333,11 +485,22 @@ interface HabitDao {
  * - **¿Para qué sirve?** Mantiene los datos en el archivo habitocto.db y proporciona el DAO al
  *   repositorio.
  * - **¿Cómo funciona?** Comparte una instancia basada en applicationContext y exporta el esquema para
- *   preparar futuras migraciones.
+ *   soportar migraciones limpias sin pérdida de datos.
  * - **¿Qué pasa si lo quitamos?** No existiría una conexión persistente y única para recuperar los
  *   datos al reabrir la app.
  */
-@Database(entities = [UserEntity::class, HabitEntity::class, HabitRecordEntity::class, FeedPostEntity::class, DataImportEntity::class], version = 2, exportSchema = true)
+@Database(
+    entities = [
+        UserEntity::class,
+        HabitEntity::class,
+        HabitRecordEntity::class,
+        FeedPostEntity::class,
+        DataImportEntity::class,
+        FriendEntity::class
+    ],
+    version = 4,
+    exportSchema = true
+)
 @TypeConverters(HabitConverters::class)
 abstract class HabitDatabase : RoomDatabase() {
     abstract fun habits(): HabitDao
@@ -345,13 +508,6 @@ abstract class HabitDatabase : RoomDatabase() {
     companion object {
         /**
          * MIGRATION_1_2 amplía la base para cargar los datos originales una sola vez.
-         *
-         * - **¿Para qué sirve?** Conserva los datos de la versión anterior al añadir autores y la
-         *   marca de importación.
-         * - **¿Cómo funciona?** Añade columnas opcionales o con valores por defecto, sus relaciones
-         *   e índices y una tabla de control; no elimina ni recrea las tablas existentes.
-         * - **¿Qué pasa si lo quitamos?** Una instalación con la versión 1 no podría abrir el nuevo
-         *   esquema conservando sus datos.
          */
         val MIGRATION_1_2 = object : Migration(1, 2) {
             override fun migrate(db: SupportSQLiteDatabase) {
@@ -363,10 +519,53 @@ abstract class HabitDatabase : RoomDatabase() {
                 db.execSQL("CREATE TABLE IF NOT EXISTS data_imports (userId TEXT NOT NULL, name TEXT NOT NULL, importedDay INTEGER NOT NULL, PRIMARY KEY(userId, name), FOREIGN KEY(userId) REFERENCES users(id) ON UPDATE NO ACTION ON DELETE RESTRICT)")
             }
         }
+
+        /**
+         * MIGRATION_2_3 incorpora personalización de mascota, sesión, código de amigo (#XXX) en `users`
+         * y crea la tabla `friends` conservando todos los datos previos en el dispositivo.
+         */
+        val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE users ADD COLUMN friendCode TEXT NOT NULL DEFAULT '000'")
+                db.execSQL("ALTER TABLE users ADD COLUMN petType TEXT NOT NULL DEFAULT 'octo'")
+                db.execSQL("ALTER TABLE users ADD COLUMN petName TEXT NOT NULL DEFAULT 'Octo'")
+                db.execSQL("ALTER TABLE users ADD COLUMN petAccessory TEXT NOT NULL DEFAULT 'none'")
+                db.execSQL("ALTER TABLE users ADD COLUMN petHabitat TEXT NOT NULL DEFAULT 'aquarium'")
+                db.execSQL("ALTER TABLE users ADD COLUMN isLoggedIn INTEGER NOT NULL DEFAULT 0")
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS friends (" +
+                        "friendCode TEXT NOT NULL, " +
+                        "userId TEXT NOT NULL, " +
+                        "displayName TEXT NOT NULL, " +
+                        "avatarUrl TEXT, " +
+                        "score INTEGER NOT NULL, " +
+                        "completedHabits INTEGER NOT NULL, " +
+                        "currentStreak INTEGER NOT NULL, " +
+                        "petType TEXT NOT NULL DEFAULT 'octo', " +
+                        "petAccessory TEXT NOT NULL DEFAULT 'none', " +
+                        "updatedAt INTEGER NOT NULL, " +
+                        "PRIMARY KEY(friendCode), " +
+                        "FOREIGN KEY(userId) REFERENCES users(id) ON UPDATE NO ACTION ON DELETE RESTRICT" +
+                    ")"
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_friends_userId ON friends(userId)")
+            }
+        }
+
+        /**
+         * MIGRATION_3_4 añade preferencia de idioma en `users` y soporte de comentarios JSON en `feed_posts`.
+         */
+        val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE users ADD COLUMN languageCode TEXT NOT NULL DEFAULT 'es'")
+                db.execSQL("ALTER TABLE feed_posts ADD COLUMN commentsJson TEXT NOT NULL DEFAULT '[]'")
+            }
+        }
+
         @Volatile private var instance: HabitDatabase? = null
         fun get(context: Context): HabitDatabase = instance ?: synchronized(this) {
             instance ?: Room.databaseBuilder(context.applicationContext, HabitDatabase::class.java, "habitocto.db")
-                .addMigrations(MIGRATION_1_2)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
                 // Al aumentar la versión, añadir migraciones explícitas; no borrar los datos del usuario.
                 .build().also { instance = it }
         }
