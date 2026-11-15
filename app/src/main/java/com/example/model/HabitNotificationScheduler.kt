@@ -56,22 +56,60 @@ object HabitNotificationScheduler {
     /** Índice rotativo para alternar los mensajes motivacionales */
     private var reminderIndex = 0
 
-    /** Lista de tips motivacionales en Español */
-    private val REMINDER_TIPS_ES = listOf(
-        "🐙 ¡Hora de hidratarte! Toma un vaso de agua para cuidar a tu pulpo.",
-        "⚡ Mantén tu racha: completa al menos un microhábito en HabitOcto hoy.",
-        "✨ Tu mascota te espera en el Santuario para entrenar y subir de nivel.",
-        "📖 ¿Listo para leer una página o meditar 5 minutos? ¡Cada paso cuenta!",
-        "🏆 Revisa el Ranking de amigos con código #XXX y sube de posición."
+    /** Categoría de emisor para alternar avisos de Sistema, Hábito y Mascota. */
+    enum class NotificationSource { SYSTEM, HABIT, PET }
+
+    private data class VariedReminder(
+        val source: NotificationSource,
+        val titleEs: String,
+        val bodyEs: String,
+        val titleEn: String,
+        val bodyEn: String
     )
 
-    /** Lista de tips motivacionales en Inglés */
-    private val REMINDER_TIPS_EN = listOf(
-        "🐙 Stay hydrated! Drink a glass of water to care for your Octo.",
-        "⚡ Keep your streak alive: complete at least one micro-habit today.",
-        "✨ Your pet is waiting in the Sanctuary to train and level up.",
-        "📖 Ready to read a page or meditate for 5 min? Every step counts!",
-        "🏆 Check the #XXX Friend Ranking and climb the leaderboard."
+    private val VARIED_REMINDERS = listOf(
+        VariedReminder(
+            source = NotificationSource.PET,
+            titleEs = "🐙 Tu Mascota Octo te extraña",
+            bodyEs = "¡Completa un hábito hoy para darme XP real y mantenerme feliz en el Santuario!",
+            titleEn = "🐙 Your Pet Octo misses you",
+            bodyEn = "Complete a habit today to grant me real XP and keep me happy in the Sanctuary!"
+        ),
+        VariedReminder(
+            source = NotificationSource.HABIT,
+            titleEs = "🎯 Micro-hábito de 2 minutos",
+            bodyEs = "Toma un vaso de agua o lee 2 páginas ahora y valida los pasos con foto.",
+            titleEn = "🎯 2-minute micro-habit",
+            bodyEn = "Drink a glass of water or read 2 pages now and validate your steps by photo."
+        ),
+        VariedReminder(
+            source = NotificationSource.SYSTEM,
+            titleEs = "⚙️ Sistema · Respaldo y Racha",
+            bodyEs = "Tu progreso y código #XXX están sincronizados con tus amigos en la nube.",
+            titleEn = "⚙️ System · Sync & Streak",
+            bodyEn = "Your progress and #XXX tag are synced in the cloud with your friends."
+        ),
+        VariedReminder(
+            source = NotificationSource.PET,
+            titleEs = "🎮 Juega en el Santuario",
+            bodyEs = "La felicidad de tu mascota sube con el minijuego tipo Pou. ¡Juega 30 segundos!",
+            titleEn = "🎮 Play in the Sanctuary",
+            bodyEn = "Boost your pet's happiness in the Pou-style mini-game. Play for 30 seconds!"
+        ),
+        VariedReminder(
+            source = NotificationSource.HABIT,
+            titleEs = "🔥 Protege tu racha diaria",
+            bodyEs = "Activa el Modo Enfoque estricto para terminar tus pendientes sin distracciones.",
+            titleEn = "🔥 Protect your daily streak",
+            bodyEn = "Start strict Focus Mode to finish your pending habits without distractions."
+        ),
+        VariedReminder(
+            source = NotificationSource.SYSTEM,
+            titleEs = "⚙️ Sistema · Feed de Amigos",
+            bodyEs = "Tus amigos compartieron nuevos avances en el Feed. ¡Revisa y comenta una vez!",
+            titleEn = "⚙️ System · Friends Feed",
+            bodyEn = "Your friends posted new updates on the Feed. Check them out and leave a comment!"
+        )
     )
 
     /**
@@ -141,10 +179,10 @@ object HabitNotificationScheduler {
             return false
         }
 
-        // Selección del tip motivacional rotativo según el idioma configurado
-        val tips = if (isEnglish) REMINDER_TIPS_EN else REMINDER_TIPS_ES
-        val chosenMessage = message ?: tips[reminderIndex % tips.size]
-        val chosenTitle = title ?: if (isEnglish) "🐙 HabitOcto Reminder" else "🐙 Recordatorio de HabitOcto"
+        // Selección rotativa entre Sistema, Hábito y Mascota según el idioma configurado
+        val reminder = VARIED_REMINDERS[reminderIndex % VARIED_REMINDERS.size]
+        val chosenMessage = message ?: if (isEnglish) reminder.bodyEn else reminder.bodyEs
+        val chosenTitle = title ?: if (isEnglish) reminder.titleEn else reminder.titleEs
         reminderIndex += 1
 
         // Intent seguro para retornar a la actividad principal al tocar la alerta

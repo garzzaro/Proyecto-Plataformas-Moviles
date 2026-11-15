@@ -117,10 +117,13 @@ fun TrackerScreen(
     user: UserEntity? = null,
     onProfileClick: () -> Unit = {},
     isEnglish: Boolean = false,
-    requirePhotoForMicroHabits: Boolean = false
+    requirePhotoForMicroHabits: Boolean = false,
+    smartCoachTip: String = ""
 ) {
     val context = LocalContext.current
     val isDark = isAppInDarkTheme
+    val activeStreak = maxOf(summary.overallStreak, summary.microStreak)
+    val pendingHabits = remember(habits) { habits.filter { !it.isCompleted } }
     // Estado para abrir el Espacio Propio / Santuario de la mascota a pantalla completa al tocar "Visitar Mascota"
     var showSanctuaryFullScreen by rememberSaveable { mutableStateOf(false) }
     var localCustomization by remember(petCustomization) { mutableStateOf(petCustomization) }
@@ -128,7 +131,7 @@ fun TrackerScreen(
 
     if (showSanctuaryFullScreen && onOpenPetSanctuary == null) {
         PetSanctuaryScreen(
-            currentStreak = summary.microStreak,
+            currentStreak = activeStreak,
             totalCompleted = summary.totalCompleted,
             completedToday = habits.count { it.isCompleted },
             scheduledToday = maxOf(1, habits.size),
@@ -150,7 +153,7 @@ fun TrackerScreen(
         HabitProgressDialog(habit, onDismiss = { progressTarget = null }, onSave = { onSetProgress(habit, it) })
     }
 
-    // Identificador del micro-hábito pendiente de verificación fotográfica en RAM (0 KB en BD)
+    // Identificador del hábito pendiente de verificación fotográfica en RAM (0 KB en BD)
     var microHabitVerificationTarget by rememberSaveable { mutableStateOf<String?>(null) }
     habits.firstOrNull { it.id == microHabitVerificationTarget }?.let { microHabit ->
         MicroHabitPhotoVerificationDialog(
@@ -166,6 +169,19 @@ fun TrackerScreen(
                         "Habit verified with photo in RAM (0 KB saved in DB)!"
                     } else {
                         "¡Hábito verificado con foto en RAM (0 KB guardados en BD)!"
+                    },
+                    Toast.LENGTH_SHORT
+                ).show()
+            },
+            onVerifiedWithSteps = { verifiedHabit, nextProgress ->
+                microHabitVerificationTarget = null
+                onSetProgress(verifiedHabit, nextProgress)
+                Toast.makeText(
+                    context,
+                    if (isEnglish) {
+                        "Progress saved: $nextProgress / ${verifiedHabit.maxProgress} verified by photo!"
+                    } else {
+                        "Avance validado con foto: $nextProgress / ${verifiedHabit.maxProgress}"
                     },
                     Toast.LENGTH_SHORT
                 ).show()
@@ -192,7 +208,7 @@ fun TrackerScreen(
         // Banner motivacional con el pulpo celebrando la racha -> lleva al Espacio Propio / Santuario de la Mascota
         item {
             MascotBannerCard(
-                streak = summary.microStreak,
+                streak = activeStreak,
                 onVisitMascotClick = {
                     if (onOpenPetSanctuary != null) {
                         onOpenPetSanctuary()
@@ -201,6 +217,27 @@ fun TrackerScreen(
                     }
                 }
             )
+        }
+
+        // Mejora Autónoma MVVM: Coach Inteligente Diario generado desde MainViewModel
+        if (smartCoachTip.isNotBlank()) {
+            item {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = if (isDark) Color(0xFF0F2924) else Color(0xFFE6F7F4)
+                    )
+                ) {
+                    Text(
+                        text = "💡 $smartCoachTip",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = if (isDark) Color(0xFF99F6E4) else Color(0xFF0F766E),
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)
+                    )
+                }
+            }
         }
 
         // Encabezado de sección con título y botón interactivo para alternar modo edición
@@ -285,17 +322,29 @@ fun TrackerScreen(
                                 color = TextGray
                             )
                         }
+                    } else if (pendingHabits.isEmpty()) {
+                        item {
+                            Text(
+                                text = if (isEnglish) {
+                                    "🎉 All pending habits are completed! Check your accomplishments below in History."
+                                } else {
+                                    "🎉 ¡Completaste todos tus hábitos pendientes! Los terminados pasan al Historial de Cumplimiento."
+                                },
+                                modifier = Modifier.padding(16.dp),
+                                fontWeight = FontWeight.SemiBold,
+                                color = if (isDark) SuccessGreen else SuccessGreenDark
+                            )
+                        }
                     }
-                    items(items = habits, key = { it.id }) { habit ->
+                    items(items = pendingHabits, key = { it.id }) { habit ->
                         HabitItemCard(
                             habit = habit,
                             isEditMode = isEditMode,
                             onToggleComplete = {
                                 if (!it.isCompleted) {
-                                    // Verificación por foto requerida para TODAS las casillas de verificación (análisis en RAM)
+                                    // Verificación por foto en RAM + validación de pasos para todo hábito pendiente
                                     microHabitVerificationTarget = it.id
                                 } else {
-                                    // Si ya estaba completado, permite desmarcarlo de inmediato
                                     onToggleHabit(it)
                                 }
                             },
@@ -523,10 +572,10 @@ fun TrackerScreen(
 
         // Mejora Autónoma: Medallas y Logros Desbloqueables
         item {
-            val achievements = remember(summary.totalCompleted, summary.microStreak, focusSessionsCount) {
+            val achievements = remember(summary.totalCompleted, activeStreak, focusSessionsCount) {
                 AchievementCatalog.evaluate(
                     totalCompleted = summary.totalCompleted,
-                    currentStreak = summary.microStreak,
+                    currentStreak = activeStreak,
                     friendsCount = 4,
                     focusSessionsCompleted = focusSessionsCount
                 )

@@ -15,8 +15,10 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -34,11 +36,14 @@ import androidx.compose.material.icons.filled.CloudDone
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.HelpOutline
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PersonAdd
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.SwapHoriz
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -69,6 +74,8 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -96,6 +103,7 @@ import com.example.ui.theme.TextLight
 import com.example.ui.theme.isAppInDarkTheme
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * Pantalla elegante de Inicio de Sesión, Registro Multi-Usuario y Foto Optimizada por Dispositivo para HabitOcto.
@@ -120,6 +128,7 @@ fun AuthScreen(
     completedHabits: Int = 0,
     currentStreak: Int = 0,
     isEnglish: Boolean = false,
+    allowRegistration: Boolean = true,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -130,27 +139,23 @@ fun AuthScreen(
     val syncState by syncManager.syncState.collectAsState()
     val isDark = isAppInDarkTheme
 
-    var isRegisterMode by rememberSaveable { mutableStateOf(false) }
+    var isRegisterMode by rememberSaveable(allowRegistration) {
+        mutableStateOf(allowRegistration && savedSessions.isEmpty())
+    }
     var name by rememberSaveable {
-        mutableStateOf(
-            initialName.ifBlank { currentSession?.displayName ?: "Suchini" }
-        )
+        mutableStateOf(if (allowRegistration && savedSessions.isEmpty()) "" else initialName)
     }
     var email by rememberSaveable {
-        mutableStateOf(
-            initialEmail.ifBlank { currentSession?.email ?: "suchini@habitocto.app" }
-        )
+        mutableStateOf(if (allowRegistration && savedSessions.isEmpty()) "" else initialEmail)
     }
-    var tagInput by rememberSaveable {
-        mutableStateOf(
-            initialTag.ifBlank { currentSession?.normalizedTag ?: "777" }
-        )
-    }
+    var password by rememberSaveable { mutableStateOf("") }
+    var showPassword by rememberSaveable { mutableStateOf(false) }
     var selectedAvatarUrl by rememberSaveable {
-        mutableStateOf(initialAvatarUrl ?: currentSession?.avatarUrl)
+        mutableStateOf(initialAvatarUrl)
     }
     var optimizationResult by remember { mutableStateOf<ImageOptimizationResult?>(null) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
+    var isSubmitting by remember { mutableStateOf(false) }
     var showOnboardingGuide by rememberSaveable { mutableStateOf(false) }
 
     // Selector de imagen desde Galería con optimización automática
@@ -187,12 +192,13 @@ fun AuthScreen(
         }
     }
 
-    val cleanTagPreview = remember(tagInput, name, email) {
-        val digits = tagInput.filter { it.isDigit() }
-        if (digits.length == 3 && (digits.toIntOrNull() ?: 0) in 100..999) {
-            digits
+    val cleanTagPreview = remember(name, email, initialTag, isRegisterMode) {
+        if (!isRegisterMode && CloudSyncManager.isValidTagCode(initialTag)) {
+            CloudSyncManager.normalizeTagCode(initialTag)
+        } else if (name.isBlank() && email.isBlank()) {
+            "---"
         } else {
-            CloudSyncManager.generateDeterministicTag(name.ifBlank { "Suchini" }, email)
+            syncManager.assignUniqueSystemTagLocal(name, email)
         }
     }
 
@@ -211,12 +217,15 @@ fun AuthScreen(
     Column(
         modifier = modifier
             .fillMaxWidth()
+            .then(
+                if (onDismiss == null) Modifier.statusBarsPadding().navigationBarsPadding() else Modifier
+            )
             .verticalScroll(rememberScrollState())
             .background(
                 color = if (isDark) Color(0xFF121212) else Color(0xFFF8F9FA),
-                shape = RoundedCornerShape(28.dp)
+                shape = RoundedCornerShape(if (onDismiss == null) 0.dp else 28.dp)
             )
-            .padding(bottom = 20.dp)
+            .padding(bottom = 24.dp)
     ) {
         // Cabecera superior con identidad HabitOcto, foto circular y vista previa del Tag #XXX
         Box(
@@ -299,7 +308,7 @@ fun AuthScreen(
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
-                            text = name.trim().ifBlank { "Suchini" },
+                            text = name.trim().ifBlank { if (isEnglish) "New Explorer" else "Nuevo Explorador" },
                             color = Color.White,
                             fontWeight = FontWeight.Bold,
                             fontSize = 16.sp
@@ -353,271 +362,204 @@ fun AuthScreen(
                 )
             }
 
-            // Opción: Continuar con sesión guardada en este dispositivo
-            val activeOrSaved = currentSession ?: savedSessions.firstOrNull()
-            if (activeOrSaved != null) {
+            // Selector entre Iniciar Sesión y Crear Cuenta (oculto al usar "Cambiar de Usuario" dentro de Perfil)
+            if (allowRegistration) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(
+                            if (isDark) Color(0xFF1E293B) else Color(0xFFE2E8F0),
+                            RoundedCornerShape(12.dp)
+                        )
+                        .padding(4.dp),
+                    horizontalArrangement = Arrangement.SpaceEvenly
+                ) {
+                    val tabs = if (isEnglish) {
+                        listOf("Sign In" to false, "Create Account" to true)
+                    } else {
+                        listOf("Iniciar Sesión" to false, "Crear Cuenta" to true)
+                    }
+                    tabs.forEach { (label, mode) ->
+                        val selected = isRegisterMode == mode
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clip(RoundedCornerShape(9.dp))
+                                .background(if (selected) PrimaryTeal else Color.Transparent)
+                                .clickable {
+                                    isRegisterMode = mode
+                                    errorMessage = null
+                                }
+                                .padding(vertical = 8.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = label,
+                                fontSize = 12.sp,
+                                fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                                color = if (selected) Color.White else (if (isDark) TextGrayDark else TextGrayLight)
+                            )
+                        }
+                    }
+                }
+            } else {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(18.dp),
+                    shape = RoundedCornerShape(14.dp),
                     colors = CardDefaults.cardColors(
                         containerColor = if (isDark) Color(0xFF00362C) else Color(0xFFE0F2F1)
-                    ),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                    )
                 ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(
-                                    imageVector = Icons.Default.CheckCircle,
-                                    contentDescription = null,
-                                    tint = if (isDark) SecondaryTeal else PrimaryTeal,
-                                    modifier = Modifier.size(20.dp)
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text(
-                                    text = if (isEnglish) "Saved session on this device" else "Sesión guardada en este dispositivo",
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 13.sp,
-                                    color = if (isDark) LightTealAccent else DarkTealBackground
-                                )
-                            }
-                            Box(
-                                modifier = Modifier
-                                    .background(PrimaryTeal, RoundedCornerShape(8.dp))
-                                    .padding(horizontal = 8.dp, vertical = 2.dp)
-                            ) {
-                                Text(
-                                    text = activeOrSaved.formattedTag,
-                                    color = Color.White,
-                                    fontWeight = FontWeight.ExtraBold,
-                                    fontSize = 12.sp
-                                )
-                            }
-                        }
+                    Text(
+                        text = if (isEnglish) {
+                            "🔒 Switching account requires username/email/#Tag and password."
+                        } else {
+                            "🔒 Cambiar de usuario requiere ingresar tu usuario/correo/#Tag y contraseña."
+                        },
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = if (isDark) LightTealAccent else DarkTealBackground,
+                        modifier = Modifier.padding(12.dp)
+                    )
+                }
+            }
 
-                        Spacer(modifier = Modifier.height(6.dp))
-
+            // Selector de Foto de Perfil Optimizada + Nube (solo al crear cuenta nueva)
+            if (isRegisterMode && allowRegistration) {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = if (isDark) Color(0xFF1E293B) else Color(0xFFF1F5F9)
+                    )
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
                         Text(
-                            text = "${activeOrSaved.displayName} • ${activeOrSaved.email}",
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.Medium,
+                            text = if (isEnglish) "Profile photo (Cloud-Synced)" else "Foto de perfil (Sincronizada en la nube)",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
                             color = if (isDark) TextLight else TextDark
                         )
-
-                        Spacer(modifier = Modifier.height(10.dp))
 
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            Button(
-                                onClick = {
-                                    syncManager.continueWithSavedSession(activeOrSaved) { session ->
-                                        onAuthSuccess(session)
-                                    }
-                                },
+                            OutlinedButton(
+                                onClick = { galleryLauncher.launch("image/*") },
                                 modifier = Modifier.weight(1f),
-                                colors = ButtonDefaults.buttonColors(containerColor = PrimaryTeal),
-                                shape = RoundedCornerShape(12.dp)
+                                shape = RoundedCornerShape(10.dp),
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp)
                             ) {
-                                Icon(
-                                    imageVector = Icons.Default.AccountCircle,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(18.dp)
-                                )
-                                Spacer(modifier = Modifier.width(6.dp))
                                 Text(
-                                    text = if (isEnglish) "Continue as ${activeOrSaved.fullHandle}" else "Continuar como ${activeOrSaved.fullHandle}",
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 12.sp,
-                                    color = Color.White
+                                    text = if (isEnglish) "🖼️ Gallery" else "🖼️ Galería",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold
                                 )
                             }
 
                             OutlinedButton(
-                                onClick = {
-                                    isRegisterMode = true
-                                    name = ""
-                                    email = ""
-                                    tagInput = CloudSyncManager.generateRandomTag()
-                                    selectedAvatarUrl = null
-                                    optimizationResult = null
-                                },
-                                shape = RoundedCornerShape(12.dp)
+                                onClick = { cameraLauncher.launch(null) },
+                                modifier = Modifier.weight(1f),
+                                shape = RoundedCornerShape(10.dp),
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp)
                             ) {
-                                Icon(
-                                    imageVector = Icons.Default.PersonAdd,
-                                    contentDescription = null,
-                                    tint = PrimaryTeal,
-                                    modifier = Modifier.size(16.dp)
-                                )
-                                Spacer(modifier = Modifier.width(4.dp))
                                 Text(
-                                    text = if (isEnglish) "New Friend" else "Soy Nuevo",
-                                    fontWeight = FontWeight.Bold,
+                                    text = if (isEnglish) "📷 Selfie" else "📷 Selfie",
                                     fontSize = 11.sp,
-                                    color = PrimaryTeal
+                                    fontWeight = FontWeight.Bold
                                 )
                             }
                         }
-                    }
-                }
-            }
 
-            // Selector entre Iniciar Sesión / Registrar o Cambiar Cuenta
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(
-                        if (isDark) Color(0xFF1E293B) else Color(0xFFE2E8F0),
-                        RoundedCornerShape(12.dp)
-                    )
-                    .padding(4.dp),
-                horizontalArrangement = Arrangement.SpaceEvenly
-            ) {
-                val tabs = if (isEnglish) {
-                    listOf("Log In" to false, "Create My Account #Tag" to true)
-                } else {
-                    listOf("Iniciar Sesión" to false, "Crear / Personalizar #Tag" to true)
-                }
-                tabs.forEach { (label, mode) ->
-                    val selected = isRegisterMode == mode
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .clip(RoundedCornerShape(9.dp))
-                            .background(if (selected) PrimaryTeal else Color.Transparent)
-                            .clickable { isRegisterMode = mode }
-                            .padding(vertical = 8.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = label,
-                            fontSize = 12.sp,
-                            fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
-                            color = if (selected) Color.White else (if (isDark) TextGrayDark else TextGrayLight)
-                        )
-                    }
-                }
-            }
-
-            // Selector de Foto de Perfil Optimizada + Avatares Predefinidos
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = if (isDark) Color(0xFF1E293B) else Color(0xFFF1F5F9)
-                )
-            ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(12.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Text(
-                        text = if (isEnglish) "Change profile photo (Auto-Optimized)" else "Foto de perfil (Optimización Automática)",
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = if (isDark) TextLight else TextDark
-                    )
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        OutlinedButton(
-                            onClick = { galleryLauncher.launch("image/*") },
-                            modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(10.dp),
-                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp)
-                        ) {
-                            Text(
-                                text = if (isEnglish) "🖼️ Upload Photo" else "🖼️ Subir de Galería",
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
-
-                        OutlinedButton(
-                            onClick = { cameraLauncher.launch(null) },
-                            modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(10.dp),
-                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp)
-                        ) {
-                            Text(
-                                text = if (isEnglish) "📷 Take Photo" else "📷 Tomar Selfie",
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
-                    }
-
-                    optimizationResult?.let { result ->
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .background(Color(0xFF1B5E20).copy(alpha = 0.14f), RoundedCornerShape(8.dp))
-                                .padding(horizontal = 8.dp, vertical = 4.dp)
-                        ) {
-                            Text(
-                                text = "✅ ${ImageOptimizer.formatSizeLabel(result, isEnglish)}",
-                                color = Color(0xFF2E7D32),
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
-                    }
-
-                    LazyRow(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        items(AvatarCatalog.PRESET_AVATARS, key = { it.id }) { preset ->
-                            val presetUrl = preset.remoteUrl
-                            val isChosen = (presetUrl == null && selectedAvatarUrl.isNullOrBlank()) ||
-                                (presetUrl != null && selectedAvatarUrl == presetUrl)
+                        optimizationResult?.let { result ->
                             Box(
                                 modifier = Modifier
-                                    .size(40.dp)
-                                    .clip(CircleShape)
-                                    .border(
-                                        width = if (isChosen) 2.5.dp else 1.dp,
-                                        color = if (isChosen) PrimaryTeal else Color.Gray.copy(alpha = 0.35f),
-                                        shape = CircleShape
-                                    )
-                                    .clickable {
-                                        selectedAvatarUrl = presetUrl
-                                        optimizationResult = null
-                                    },
-                                contentAlignment = Alignment.Center
+                                    .fillMaxWidth()
+                                    .background(Color(0xFF1B5E20).copy(alpha = 0.14f), RoundedCornerShape(8.dp))
+                                    .padding(horizontal = 8.dp, vertical = 4.dp)
                             ) {
-                                HabitImage(
-                                    model = presetUrl ?: R.drawable.ic_pulpo,
-                                    contentDescription = preset.title,
-                                    modifier = Modifier
-                                        .size(36.dp)
-                                        .clip(CircleShape),
-                                    contentScale = ContentScale.Crop
+                                Text(
+                                    text = "✅ ${ImageOptimizer.formatSizeLabel(result, isEnglish)}",
+                                    color = Color(0xFF2E7D32),
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold
                                 )
+                            }
+                        }
+
+                        LazyRow(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            items(AvatarCatalog.PRESET_AVATARS, key = { it.id }) { preset ->
+                                val presetUrl = preset.remoteUrl
+                                val isChosen = (presetUrl == null && selectedAvatarUrl.isNullOrBlank()) ||
+                                    (presetUrl != null && selectedAvatarUrl == presetUrl)
+                                Box(
+                                    modifier = Modifier
+                                        .size(40.dp)
+                                        .clip(CircleShape)
+                                        .border(
+                                            width = if (isChosen) 2.5.dp else 1.dp,
+                                            color = if (isChosen) PrimaryTeal else Color.Gray.copy(alpha = 0.35f),
+                                            shape = CircleShape
+                                        )
+                                        .clickable {
+                                            selectedAvatarUrl = presetUrl
+                                            optimizationResult = null
+                                        },
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    HabitImage(
+                                        model = presetUrl ?: R.drawable.ic_pulpo,
+                                        contentDescription = preset.title,
+                                        modifier = Modifier
+                                            .size(36.dp)
+                                            .clip(CircleShape),
+                                        contentScale = ContentScale.Crop
+                                    )
+                                }
                             }
                         }
                     }
                 }
             }
 
-            // Campos de Nombre, Correo y Tag de 3 dígitos (#100 - #999)
+            // Campos según modo: Registro (Nombre, Correo, Contraseña, #Tag del Sistema) vs Login (Usuario/Correo + Contraseña)
             OutlinedTextField(
-                value = name,
-                onValueChange = {
-                    name = it
+                value = if (isRegisterMode) name else email.ifBlank { name },
+                onValueChange = { raw ->
+                    if (isRegisterMode) {
+                        name = raw
+                    } else {
+                        email = raw
+                        name = raw
+                    }
                     errorMessage = null
                 },
-                label = { Text(if (isEnglish) "Username" else "Nombre de usuario") },
-                placeholder = { Text(if (isEnglish) "E.g. Alex" else "Ej. Suchini") },
+                label = {
+                    Text(
+                        if (isRegisterMode) {
+                            if (isEnglish) "Username" else "Nombre de usuario"
+                        } else {
+                            if (isEnglish) "Username, Email or #Tag" else "Usuario, Correo o #Tag"
+                        }
+                    )
+                },
+                placeholder = {
+                    Text(
+                        if (isRegisterMode) {
+                            if (isEnglish) "E.g. Alex" else "Ej. Alex Rivero"
+                        } else {
+                            if (isEnglish) "user@mail.com or #101" else "correo@ejemplo.com o #101"
+                        }
+                    )
+                },
                 leadingIcon = {
                     Icon(imageVector = Icons.Default.Person, contentDescription = null, tint = PrimaryTeal)
                 },
@@ -630,20 +572,55 @@ fun AuthScreen(
                 )
             )
 
+            if (isRegisterMode && allowRegistration) {
+                OutlinedTextField(
+                    value = email,
+                    onValueChange = {
+                        email = it
+                        errorMessage = null
+                    },
+                    label = { Text(if (isEnglish) "Email address" else "Correo electrónico") },
+                    placeholder = { Text("ejemplo@habitocto.app") },
+                    leadingIcon = {
+                        Icon(imageVector = Icons.Default.Email, contentDescription = null, tint = PrimaryTeal)
+                    },
+                    singleLine = true,
+                    isError = !isEmailValid,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = PrimaryTeal,
+                        focusedLabelColor = PrimaryTeal
+                    )
+                )
+            }
+
+            // Contraseña obligatoria tanto para crear cuenta como para iniciar sesión o cambiar de usuario
             OutlinedTextField(
-                value = email,
+                value = password,
                 onValueChange = {
-                    email = it
+                    password = it
                     errorMessage = null
                 },
-                label = { Text(if (isEnglish) "Email address" else "Correo electrónico") },
-                placeholder = { Text("ejemplo@habitocto.app") },
+                label = { Text(if (isEnglish) "Password (min. 4 chars)" else "Contraseña (mín. 4 caracteres)") },
+                placeholder = { Text("••••••") },
                 leadingIcon = {
-                    Icon(imageVector = Icons.Default.Email, contentDescription = null, tint = PrimaryTeal)
+                    Icon(imageVector = Icons.Default.Lock, contentDescription = null, tint = PrimaryTeal)
                 },
+                trailingIcon = {
+                    TextButton(onClick = { showPassword = !showPassword }) {
+                        Icon(
+                            imageVector = if (showPassword) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                            contentDescription = null,
+                            tint = PrimaryTeal,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                },
+                visualTransformation = if (showPassword) VisualTransformation.None else PasswordVisualTransformation(),
                 singleLine = true,
-                isError = !isEmailValid,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(14.dp),
                 colors = OutlinedTextFieldDefaults.colors(
@@ -652,105 +629,51 @@ fun AuthScreen(
                 )
             )
 
-            // Selector del Tag de 3 dígitos (#100 a #999)
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Row(
+            // Código #Tag único asignado exclusivamente por el sistema (no editable)
+            if (isRegisterMode && allowRegistration) {
+                Card(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    OutlinedTextField(
-                        value = tagInput,
-                        onValueChange = { raw ->
-                            val digitsOnly = raw.filter { it.isDigit() }.take(3)
-                            tagInput = digitsOnly
-                            errorMessage = null
-                        },
-                        label = { Text(if (isEnglish) "Your #Code (100-999)" else "Tu Código # (100-999)") },
-                        prefix = {
-                            Text(
-                                text = "#",
-                                fontWeight = FontWeight.ExtraBold,
-                                color = PrimaryTeal
-                            )
-                        },
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(14.dp),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = PrimaryTeal,
-                            focusedLabelColor = PrimaryTeal
-                        )
+                    shape = RoundedCornerShape(14.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = if (isDark) Color(0xFF0F2924) else Color(0xFFE6F7F4)
                     )
-
-                    OutlinedButton(
-                        onClick = {
-                            tagInput = CloudSyncManager.generateRandomTag()
-                        },
-                        shape = RoundedCornerShape(12.dp),
-                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 14.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Refresh,
-                            contentDescription = if (isEnglish) "Generate random code" else "Generar código aleatorio",
-                            tint = PrimaryTeal,
-                            modifier = Modifier.size(18.dp)
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text(
-                            text = if (isEnglish) "Random" else "Aleatorio",
-                            fontSize = 12.sp,
-                            color = PrimaryTeal,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-
-                    OutlinedButton(
-                        onClick = {
-                            tagInput = CloudSyncManager.generateDeterministicTag(name.ifBlank { "Suchini" }, email)
-                        },
-                        shape = RoundedCornerShape(12.dp),
-                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 14.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.AutoAwesome,
-                            contentDescription = "Auto",
-                            tint = PrimaryTeal,
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("Auto", fontSize = 12.sp, color = PrimaryTeal, fontWeight = FontWeight.Bold)
-                    }
-                }
-
-                // Sugerencias rápidas de Tags populares
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(
-                        text = if (isEnglish) "Suggested:" else "Sugeridos:",
-                        fontSize = 11.sp,
-                        color = if (isDark) TextGrayDark else TextGrayLight
-                    )
-                    listOf("777", "101", "204", "555", "888").forEach { preset ->
-                        val isChosen = cleanTagPreview == preset
+                    Row(
+                        modifier = Modifier.padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
                         Box(
                             modifier = Modifier
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(
-                                    if (isChosen) PrimaryTeal else (if (isDark) Color(0xFF1E293B) else Color(0xFFE2E8F0))
-                                )
-                                .clickable { tagInput = preset }
-                                .padding(horizontal = 8.dp, vertical = 4.dp)
+                                .background(PrimaryTeal, RoundedCornerShape(8.dp))
+                                .padding(horizontal = 10.dp, vertical = 4.dp)
                         ) {
                             Text(
-                                text = "#$preset",
-                                fontSize = 11.sp,
+                                text = "#$cleanTagPreview",
+                                color = Color.White,
+                                fontWeight = FontWeight.ExtraBold,
+                                fontSize = 14.sp
+                            )
+                        }
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = if (isEnglish) {
+                                    "Unique #Tag assigned by system"
+                                } else {
+                                    "#Tag único asignado por el sistema"
+                                },
+                                fontSize = 12.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = if (isChosen) Color.White else (if (isDark) TextLight else TextDark)
+                                color = if (isDark) SecondaryTeal else DeepDarkTeal
+                            )
+                            Text(
+                                text = if (isEnglish) {
+                                    "Guaranteed non-repeatable across accounts; assigned automatically."
+                                } else {
+                                    "No es editable ni repetible; el sistema lo asignará único en la nube."
+                                },
+                                fontSize = 11.sp,
+                                color = if (isDark) TextGrayDark else TextGrayLight
                             )
                         }
                     }
@@ -766,11 +689,15 @@ fun AuthScreen(
                 )
             }
 
-            // Otras sesiones guardadas en este dispositivo (si hay más de una)
-            if (savedSessions.size > 1) {
+            // Cuentas guardadas: al tocar una, rellena el identificador y exige contraseña
+            if (savedSessions.isNotEmpty() && !isRegisterMode) {
                 HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
                 Text(
-                    text = if (isEnglish) "Accounts saved on this device:" else "Cuentas guardadas en este dispositivo:",
+                    text = if (isEnglish) {
+                        "Quick fill saved account (password required):"
+                    } else {
+                        "Seleccionar cuenta guardada (requiere contraseña):"
+                    },
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Bold,
                     color = if (isDark) TextGrayDark else TextGrayLight
@@ -785,10 +712,12 @@ fun AuthScreen(
                                 .clickable {
                                     name = saved.displayName
                                     email = saved.email
-                                    tagInput = saved.normalizedTag
                                     selectedAvatarUrl = saved.avatarUrl
-                                    syncManager.continueWithSavedSession(saved) { session ->
-                                        onAuthSuccess(session)
+                                    password = ""
+                                    errorMessage = if (isEnglish) {
+                                        "Enter password for ${saved.displayName} ${saved.formattedTag}"
+                                    } else {
+                                        "Ingresa la contraseña para ${saved.displayName} ${saved.formattedTag}"
                                     }
                                 }
                                 .padding(horizontal = 12.dp, vertical = 8.dp),
@@ -819,40 +748,71 @@ fun AuthScreen(
                 }
             }
 
-            // Botón principal de Guardar e Iniciar Sesión Persistente
+            // Botón principal de Registro o Inicio de Sesión Autenticado
             Button(
+                enabled = !isSubmitting,
                 onClick = {
-                    if (name.isBlank()) {
-                        errorMessage = if (isEnglish) "Please enter your name to continue." else "Por favor escribe tu nombre para continuar."
-                        return@Button
-                    }
-                    if (!isEmailValid) {
-                        errorMessage = if (isEnglish) "Please enter a valid email address." else "Ingresa un correo electrónico válido."
-                        return@Button
-                    }
-                    val chosenTag = cleanTagPreview
-                    val cleanName = name.trim()
-                    val cleanEmail = email.trim()
-                    val chosenAvatar = selectedAvatarUrl
-
-                    syncManager.loginOrRegisterAsync(
-                        name = cleanName,
-                        email = cleanEmail,
-                        preferredTag = chosenTag,
-                        completedHabits = completedHabits,
-                        currentStreak = currentStreak
-                    ) { session ->
-                        val updatedSession = session.copy(avatarUrl = chosenAvatar)
-                        coroutineScope.launch(Dispatchers.IO) {
-                            runCatching {
-                                HabitDatabase.get(context).habits().setInitialProfile(
-                                    userId = "local-user",
-                                    name = cleanName,
-                                    avatarUrl = chosenAvatar
-                                )
+                    if (isRegisterMode && allowRegistration) {
+                        if (name.trim().length < 2) {
+                            errorMessage = if (isEnglish) "Enter at least 2 characters for your username." else "Escribe tu nombre de usuario (mín. 2 caracteres)."
+                            return@Button
+                        }
+                        if (email.isBlank() || !isEmailValid) {
+                            errorMessage = if (isEnglish) "Please enter a valid email address." else "Ingresa un correo electrónico válido."
+                            return@Button
+                        }
+                        if (password.length < 4) {
+                            errorMessage = if (isEnglish) "Password must have at least 4 characters." else "Crea una contraseña de al menos 4 caracteres."
+                            return@Button
+                        }
+                        isSubmitting = true
+                        val localAvatar = selectedAvatarUrl
+                        coroutineScope.launch {
+                            val cloudAvatar = if (!localAvatar.isNullOrBlank()) {
+                                ImageOptimizer.uploadImageOrEncodeForCloud(context, localAvatar, isAvatar = true) ?: localAvatar
+                            } else null
+                            val res = syncManager.registerAccount(
+                                name = name.trim(),
+                                email = email.trim(),
+                                password = password,
+                                avatarUrl = cloudAvatar,
+                                completedHabits = completedHabits,
+                                currentStreak = currentStreak
+                            )
+                            isSubmitting = false
+                            res.onSuccess { session ->
+                                errorMessage = null
+                                onAuthSuccess(session)
+                            }.onFailure { err ->
+                                errorMessage = err.message ?: if (isEnglish) "Could not register account." else "No se pudo crear la cuenta."
                             }
                         }
-                        onAuthSuccess(updatedSession)
+                    } else {
+                        val identifier = email.ifBlank { name }.trim()
+                        if (identifier.isEmpty()) {
+                            errorMessage = if (isEnglish) "Enter your username, email or #Tag." else "Ingresa tu usuario, correo o #Tag."
+                            return@Button
+                        }
+                        if (password.length < 4) {
+                            errorMessage = if (isEnglish) "Enter your password (min. 4 chars)." else "Ingresa tu contraseña (mín. 4 caracteres)."
+                            return@Button
+                        }
+                        isSubmitting = true
+                        coroutineScope.launch {
+                            val res = syncManager.authenticateAccount(
+                                identifier = identifier,
+                                password = password,
+                                completedHabits = completedHabits,
+                                currentStreak = currentStreak
+                            )
+                            isSubmitting = false
+                            res.onSuccess { session ->
+                                errorMessage = null
+                                onAuthSuccess(session)
+                            }.onFailure { err ->
+                                errorMessage = err.message ?: if (isEnglish) "Invalid credentials." else "Credenciales incorrectas."
+                            }
+                        }
                     }
                 },
                 modifier = Modifier
@@ -868,14 +828,10 @@ fun AuthScreen(
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                    text = if (isRegisterMode) {
-                        if (isEnglish) "Register & Sync #$cleanTagPreview" else "Registrar y Sincronizar #$cleanTagPreview"
+                    text = if (isRegisterMode && allowRegistration) {
+                        if (isEnglish) "Create Account & Sync #$cleanTagPreview" else "Crear Cuenta y Sincronizar #$cleanTagPreview"
                     } else {
-                        if (isEnglish) {
-                            "Save Session as ${name.trim().ifBlank { "Suchini" }} #$cleanTagPreview"
-                        } else {
-                            "Guardar Sesión como ${name.trim().ifBlank { "Suchini" }} #$cleanTagPreview"
-                        }
+                        if (isEnglish) "Sign In with Password" else "Iniciar Sesión / Cambiar Usuario"
                     },
                     fontWeight = FontWeight.Bold,
                     fontSize = 14.sp,
@@ -902,10 +858,12 @@ fun AuthScreen(
             isEnglish = isEnglish,
             onCreateMyAccount = {
                 showOnboardingGuide = false
-                isRegisterMode = true
-                name = ""
-                email = ""
-                tagInput = CloudSyncManager.generateRandomTag()
+                if (allowRegistration) {
+                    isRegisterMode = true
+                    name = ""
+                    email = ""
+                    password = ""
+                }
             },
             onDismiss = { showOnboardingGuide = false }
         )
@@ -913,11 +871,7 @@ fun AuthScreen(
 }
 
 /**
- * Modal de Autenticación y Cambio de Cuenta para desplegarse sobre cualquier pantalla de HabitOcto.
- *
- * - **¿Para qué sirve?** Permite abrir la pantalla de autenticación en formato de diálogo superpuesto desde el Perfil o TopBar.
- * - **¿Cómo funciona?** Envuelve a [AuthScreen] dentro de un [Dialog] de Jetpack Compose con fondo difuminado y bordes redondeados.
- * - **¿Qué pasa si lo quitamos?** Para cambiar de cuenta o iniciar sesión habría que navegar fuera del flujo actual perdiendo el estado visual.
+ * Modal de Cambio de Cuenta para desplegarse sobre cualquier pantalla de HabitOcto (requiere contraseña).
  */
 @Composable
 fun AuthModalDialog(
@@ -929,7 +883,8 @@ fun AuthModalDialog(
     initialAvatarUrl: String? = null,
     completedHabits: Int = 0,
     currentStreak: Int = 0,
-    isEnglish: Boolean = false
+    isEnglish: Boolean = false,
+    allowRegistration: Boolean = false
 ) {
     Dialog(
         onDismissRequest = onDismiss,
@@ -954,7 +909,8 @@ fun AuthModalDialog(
                 initialAvatarUrl = initialAvatarUrl,
                 completedHabits = completedHabits,
                 currentStreak = currentStreak,
-                isEnglish = isEnglish
+                isEnglish = isEnglish,
+                allowRegistration = allowRegistration
             )
         }
     }
@@ -1048,9 +1004,9 @@ fun AccountOnboardingGuideDialog(
                         )
                         Text(
                             text = if (isEnglish) {
-                                "The app opens immediately so nobody gets blocked, and any friend can tap 'Create My Account / Switch User' to register their own Name, Email, Profile Photo, and receive their unique 3-digit #XXX code."
+                                "On first install, the initial Sign In / Create Account gate asks for Name, Password, optional Photo and assigns a unique system #XXX code. Inside Profile you can only use 'Switch User' with username & password."
                             } else {
-                                "La app entra lista para usarse y tu amigo solo debe pulsar 'Crear Mi Cuenta / Cambiar Usuario' para registrar su propio nombre, correo, foto de perfil y recibir su código único #XXX de 3 dígitos."
+                                "Al instalar por primera vez o descargar el repo, aparece el inicio de sesión para crear cuenta con Nombre, Contraseña, Foto en la nube y #XXX único otorgado por el sistema. Dentro de Perfil solo se permite 'Cambiar de Usuario' con usuario y contraseña."
                             },
                             fontSize = 12.sp,
                             lineHeight = 17.sp,
@@ -1144,7 +1100,7 @@ fun AccountOnboardingGuideDialog(
                         shape = RoundedCornerShape(12.dp)
                     ) {
                         Text(
-                            text = if (isEnglish) "Create My Account" else "Crear Mi Cuenta",
+                            text = if (isEnglish) "Switch User" else "Cambiar de Usuario",
                             color = Color.White,
                             fontWeight = FontWeight.Bold
                         )
@@ -1393,9 +1349,9 @@ fun ProfileCloudTagCard(
                     }
                     Text(
                         text = if (isEnglish) {
-                            "Each person can tap 'Create My Account / Switch User' below to register their own name, photo & 3-digit #Code (synced in Firebase habitocto-suchini-2026) with a persistent session on their phone."
+                            "New users register from the initial Login screen with password and an automatic unique #Tag. Use 'Switch User' below to sign into another account with credentials."
                         } else {
-                            "Cada amigo puede pulsar 'Crear Mi Cuenta / Cambiar Usuario' para registrar su propio nombre, foto y código #XXX de 3 dígitos (sincronizado en Firebase habitocto-suchini-2026) con sesión persistente en su teléfono."
+                            "Cada cuenta nueva se crea en la pantalla de inicio con contraseña y #Tag único del sistema. Usa 'Cambiar de Usuario' abajo ingresando usuario y contraseña."
                         },
                         fontSize = 11.sp,
                         lineHeight = 15.sp,
@@ -1404,7 +1360,7 @@ fun ProfileCloudTagCard(
                 }
             }
 
-            // Botón para Crear Mi Cuenta / Cambiar Usuario / Cerrar sesión
+            // Botón exclusivo para Cambiar de Usuario (exige usuario y contraseña)
             OutlinedButton(
                 onClick = onOpenAuthModal,
                 modifier = Modifier.fillMaxWidth(),
@@ -1412,13 +1368,13 @@ fun ProfileCloudTagCard(
             ) {
                 Icon(
                     imageVector = Icons.Default.SwapHoriz,
-                    contentDescription = if (isEnglish) "Switch account" else "Cambiar de cuenta",
+                    contentDescription = if (isEnglish) "Switch user" else "Cambiar de usuario",
                     tint = if (isDark) SecondaryTeal else PrimaryTeal,
                     modifier = Modifier.size(18.dp)
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                    text = if (isEnglish) "Create My Account / Switch User" else "Crear Mi Cuenta / Cambiar Usuario",
+                    text = if (isEnglish) "Switch User" else "Cambiar de Usuario",
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Bold,
                     color = if (isDark) SecondaryTeal else PrimaryTeal

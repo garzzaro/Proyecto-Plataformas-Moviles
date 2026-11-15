@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -46,6 +47,7 @@ import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Restaurant
+import androidx.compose.material.icons.filled.SportsEsports
 import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -128,6 +130,8 @@ fun PetSanctuaryScreen(
     scheduledToday: Int = 1,
     friendsCount: Int = 4,
     initialCustomization: PetCustomization = PetCustomization(),
+    petHappinessBonus: Int = 0,
+    onBoostPetHappiness: (Int) -> Unit = {},
     onCustomizationChanged: (PetCustomization) -> Unit = {},
     onBack: () -> Unit
 ) {
@@ -140,11 +144,11 @@ fun PetSanctuaryScreen(
     var activeCustomTab by rememberSaveable { mutableIntStateOf(0) } // 0: Animal, 1: Accesorio, 2: Hábitat
     var showRenameDialog by rememberSaveable { mutableStateOf(false) }
     var renameDraft by rememberSaveable(customization.customName) { mutableStateOf(customization.customName) }
+    var showMiniGameModal by remember { mutableStateOf(false) }
 
-    // Bonificadores interactivos por alimentar, acariciar o entrenar en el Santuario
+    // Bonificadores interactivos por alimentar, acariciar o entrenar en el Santuario (NO otorgan XP)
     var bonusHappiness by rememberSaveable { mutableIntStateOf(0) }
     var bonusEnergy by rememberSaveable { mutableIntStateOf(0) }
-    var bonusXp by rememberSaveable { mutableIntStateOf(0) }
     var focusSessionsDone by rememberSaveable { mutableIntStateOf(0) }
 
     // Rebote animado de la mascota al interactuar
@@ -158,14 +162,14 @@ fun PetSanctuaryScreen(
         }
     }
 
-    // Cálculo de Nivel y XP
-    val totalXpEarned = (totalCompleted * 10) + bonusXp
+    // Cálculo de Nivel y XP: estrictamente ligado a hábitos y micro-hábitos completados
+    val totalXpEarned = totalCompleted * 10
     val petLevel = maxOf(1, (totalXpEarned / 100) + 1)
     val xpInCurrentLevel = totalXpEarned % 100
 
-    // Cálculo de Felicidad (50% base + 10% por día de racha, 40% si racha es 0) + bonus de cuidado
+    // Cálculo de Felicidad (50% base + 10% por día de racha, 40% si racha es 0) + bonus de cuidado y minijuego
     val baseHappiness = if (currentStreak > 0) minOf(100, 50 + currentStreak * 10) else 40
-    val happinessPercent = minOf(100, baseHappiness + bonusHappiness)
+    val happinessPercent = minOf(100, baseHappiness + bonusHappiness + petHappinessBonus)
 
     // Cálculo de Energía (progreso del día + racha + bonus de entrenamiento)
     val safeScheduled = maxOf(1, scheduledToday)
@@ -182,7 +186,7 @@ fun PetSanctuaryScreen(
     val moodTitle = when {
         happinessPercent >= 95 && energyPercent >= 95 -> "¡$petDisplayName está en Estado Radiante! 👑"
         currentStreak >= 3 -> "¡$petDisplayName rebosa de alegría! 🔥"
-        currentStreak >= 1 || bonusHappiness > 0 -> "¡$petDisplayName está feliz contigo! ✨"
+        currentStreak >= 1 || bonusHappiness > 0 || petHappinessBonus > 0 -> "¡$petDisplayName está feliz contigo! ✨"
         else -> "$petDisplayName espera tu primer hábito de hoy 🌱"
     }
 
@@ -233,8 +237,10 @@ fun PetSanctuaryScreen(
         color = if (isDark) Color(0xFF0B1320) else Color(0xFFF2F7F6)
     ) {
         LazyColumn(
-            modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(bottom = 32.dp),
+            modifier = Modifier
+                .fillMaxSize()
+                .navigationBarsPadding(),
+            contentPadding = PaddingValues(bottom = 36.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             // =========================================================================
@@ -413,8 +419,8 @@ fun PetSanctuaryScreen(
                                 onClick = {
                                     petBounceTrigger = true
                                     bonusHappiness = minOf(50, bonusHappiness + 8)
-                                    bonusXp += 5
-                                    interactionMessage = "¡Ñam! $petDisplayName comió su snack favorito (+8% ❤️, +5 XP)"
+                                    onBoostPetHappiness(4)
+                                    interactionMessage = "¡Ñam! $petDisplayName comió su snack favorito (+8% ❤️)"
                                     Toast.makeText(context, "¡Alimentaste a $petDisplayName!", Toast.LENGTH_SHORT).show()
                                 }
                             )
@@ -427,6 +433,7 @@ fun PetSanctuaryScreen(
                                 onClick = {
                                     petBounceTrigger = true
                                     bonusHappiness = minOf(50, bonusHappiness + 5)
+                                    onBoostPetHappiness(3)
                                     interactionMessage = "¡$petDisplayName está ronroneando de felicidad! (+5% ❤️)"
                                 }
                             )
@@ -439,10 +446,33 @@ fun PetSanctuaryScreen(
                                 onClick = {
                                     petBounceTrigger = true
                                     bonusEnergy = minOf(50, bonusEnergy + 10)
-                                    bonusXp += 10
-                                    interactionMessage = "¡Gran entrenamiento con $petDisplayName! (+10% ⚡, +10 XP)"
+                                    interactionMessage = "¡Gran entrenamiento con $petDisplayName! (+10% ⚡)"
                                     Toast.makeText(context, "¡Energía de $petDisplayName recargada!", Toast.LENGTH_SHORT).show()
                                 }
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        Button(
+                            onClick = { showMiniGameModal = true },
+                            shape = RoundedCornerShape(14.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = SecondaryTeal,
+                                contentColor = Color(0xFF00251A)
+                            ),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.SportsEsports,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "Jugar Mini-Juego Pou (+Felicidad, 0 XP)",
+                                fontWeight = FontWeight.ExtraBold,
+                                fontSize = 13.sp
                             )
                         }
                     }
@@ -711,6 +741,21 @@ fun PetSanctuaryScreen(
                 }
             }
         }
+    }
+
+    if (showMiniGameModal) {
+        PetMiniGameModal(
+            petName = petDisplayName,
+            petType = customization.petType,
+            onDismiss = { showMiniGameModal = false },
+            onGameFinished = { earnedHappiness ->
+                if (earnedHappiness > 0) {
+                    bonusHappiness = minOf(50, bonusHappiness + earnedHappiness)
+                    onBoostPetHappiness(earnedHappiness)
+                    interactionMessage = "¡Genial! $petDisplayName se divirtió (+$earnedHappiness% ❤️, 0 XP)"
+                }
+            }
+        )
     }
 
     if (showRenameDialog) {
@@ -1630,7 +1675,7 @@ fun PetStatsExplanationCard(
             ExplanationRuleBlock(
                 emoji = "❤️",
                 title = "Felicidad (50% base + 10% por día de racha • Actual: $happinessPercent%)",
-                description = "Sube cada día consecutivo que cumples al menos un microhábito o cuando alimentas y acaricias a tu mascota en el Santuario. Si pasas un día en cero, tu mascota se pone triste (baja a 40%).",
+                description = "Sube cada día consecutivo que cumples al menos un microhábito, al cuidar a tu mascota o en el Minijuego Pou del Santuario (sin otorgar XP). Si pasas un día en cero, baja a 40%.",
                 accentColor = Color(0xFFE91E63),
                 isDark = isDark
             )
@@ -1648,7 +1693,7 @@ fun PetStatsExplanationCard(
             ExplanationRuleBlock(
                 emoji = "⭐",
                 title = "Experiencia (XP) y Evolución (Nivel actual: $petLevel)",
-                description = "Ganas +10 XP por cada hábito completado y +25 XP por sesión de enfoque en el Tracker. Cada 100 XP subes 1 Nivel para desbloquear nuevos compañeros (Dragón, Zorro, Panda, Axolote), hábitats y accesorios.",
+                description = "La XP solo sube al hacer y completar hábitos o micro-hábitos reales (+10 XP por hábito). Los botones de cuidar y el minijuego mejoran Felicidad o Energía, nunca XP.",
                 accentColor = PrimaryTeal,
                 isDark = isDark
             )

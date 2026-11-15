@@ -46,7 +46,9 @@ data class MainUiState(
     val isLoading: Boolean = true,
     val isSaving: Boolean = false,
     val error: String? = null,
-    val publicationVersion: Int = 0
+    val publicationVersion: Int = 0,
+    val petHappinessBonus: Int = 0,
+    val smartCoachTip: String = ""
 )
 
 // ============================================================================
@@ -63,7 +65,11 @@ data class MainUiState(
  * - **¿Qué pasa si lo quitamos?** La interfaz perdería su coordinación y no recibiría las
  *   actualizaciones de los datos guardados.
  */
-class MainViewModel(private val repository: HabitRepository) : ViewModel() {
+class MainViewModel(
+    private val repository: HabitRepository,
+    private val cloudSync: CloudSyncManager? = null,
+    private val appContext: Context? = null
+) : ViewModel() {
     // ============================================================================
     // ESTADO OBSERVABLE Y CONTROL DE OPERACIONES
     // ============================================================================
@@ -79,13 +85,32 @@ class MainViewModel(private val repository: HabitRepository) : ViewModel() {
     // CARGA INICIAL Y CAMBIO DE FECHA
     // ============================================================================
 
-    // Recupera lo guardado y detecta cambios de día mientras el ViewModel sigue activo.
+    // Recupera lo guardado, detecta cambios de día y escucha cambios de la nube mientras el ViewModel sigue activo.
     init {
         refresh()
         viewModelScope.launch {
             while (true) {
                 delay(30_000)
                 if (HabitDates.today() != day) refresh()
+            }
+        }
+        cloudSync?.let { sync ->
+            viewModelScope.launch {
+                sync.syncedFeedPosts.collect { snapshot?.let(::render) }
+            }
+            viewModelScope.launch {
+                sync.syncedFriends.collect { snapshot?.let(::render) }
+            }
+            viewModelScope.launch {
+                sync.petHappinessBonus.collect { snapshot?.let(::render) }
+            }
+            viewModelScope.launch {
+                sync.currentSession.collect { session ->
+                    if (session != null) {
+                        runCatching { sync.refreshFriendsFeed() }
+                    }
+                    snapshot?.let(::render)
+                }
             }
         }
     }
@@ -148,9 +173,30 @@ class MainViewModel(private val repository: HabitRepository) : ViewModel() {
         // El mismo conjunto de identificadores activos alimenta todos los contadores semanales.
         val summary = HabitTracking.summary(data.records, active.map { it.id }.toSet(), today)
         val authors = data.authors.associateBy { it.id }
+        val cloudFriendsByTag = cloudSync?.syncedFriends?.value.orEmpty().associateBy { it.normalizedTag }
+        val mergedFriends = data.friends.map { localFriend ->
+            val remote = cloudFriendsByTag[localFriend.friendCode]
+            if (remote != null) {
+                localFriend.copy(
+                    displayName = remote.displayName.ifBlank { localFriend.displayName },
+                    avatarUrl = remote.avatarUrl?.takeIf { !AvatarCatalog.isBrokenUrl(it) } ?: localFriend.avatarUrl,
+                    score = maxOf(localFriend.score, remote.score),
+                    completedHabits = maxOf(localFriend.completedHabits, remote.completedHabits),
+                    currentStreak = maxOf(localFriend.currentStreak, remote.currentStreak),
+                    petType = remote.petType.ifBlank { localFriend.petType },
+                    petAccessory = remote.petAccessory.ifBlank { localFriend.petAccessory }
+                )
+            } else {
+                localFriend
+            }
+        }
+
+        val activeStreakCount = maxOf(summary.overallStreak, summary.microStreak)
+        val myTag = cloudSync?.currentSession?.value?.normalizedTag
         val now = System.currentTimeMillis()
         val maxAgeMs = 7L * 24L * 60L * 60L * 1000L
-        val posts = data.posts
+
+        val localPosts = data.posts
             .filter { now - it.createdAt <= maxAgeMs }
             .sortedByDescending { it.createdAt }
             .map { post ->
@@ -160,6 +206,7 @@ class MainViewModel(private val repository: HabitRepository) : ViewModel() {
                 val isOwnPost = post.authorId == null || post.authorId == data.user?.id
                 val author = if (isOwnPost) (data.user ?: authors[post.authorId]) else (authors[post.authorId] ?: data.user)
                 val comments = HabitConverters.decodeComments(post.commentsJson)
+                    .distinctBy { "${it.authorName.trim().lowercase()}|${it.content.trim()}" }
                 FeedPostItem(
                     id = post.id,
                     authorName = author?.displayName ?: "Mi perfil",
@@ -167,35 +214,98 @@ class MainViewModel(private val repository: HabitRepository) : ViewModel() {
                     habitTitle = post.habitTitle,
                     habitCategory = post.category,
                     content = post.content,
-                    timeAgo = when {
-                        minutes < 1 -> "Justo ahora"
-                        minutes < 60 -> "Hace $minutes min"
-                        minutes < 1440 -> "Hace ${minutes / 60} h"
-                        else -> "Hace ${minutes / 1440} días"
-                    },
+                    timeAgo = formatRelativeTime(minutes),
                     postImageUrl = post.imageUrl,
                     likesCount = post.baseLikesCount + if (post.isLiked) 1 else 0,
                     isLiked = post.isLiked,
-                    streakCount = post.authorStreak ?: summary.microStreak,
+                    streakCount = post.authorStreak ?: activeStreakCount,
                     isOwnPost = isOwnPost,
                     createdAtMillis = post.createdAt,
                     daysRemaining = daysRemaining,
                     comments = comments
                 )
             }
+
+        val friendTagsVisible = (mergedFriends.map { it.friendCode } + cloudFriendsByTag.keys + listOfNotNull(myTag)).toSet()
+        val existingPostIds = localPosts.map { it.id }.toSet()
+        val cloudPosts = cloudSync?.syncedFeedPosts?.value.orEmpty()
+            .filter { (now - it.createdAtMillis) <= maxAgeMs && it.authorTag in friendTagsVisible }
+            .filterNot { cp ->
+                cp.id in existingPostIds || localPosts.any { lp ->
+                    lp.content.trim() == cp.caption.trim() && kotlin.math.abs(lp.createdAtMillis - cp.createdAtMillis) < 30_000L
+                }
+            }
+            .map { cp ->
+                val minutes = ((now - cp.createdAtMillis).coerceAtLeast(0L) / 60_000L).coerceAtLeast(0L)
+                val daysRemaining = (((maxAgeMs - (now - cp.createdAtMillis).coerceAtLeast(0L)) / 86_400_000L).toInt() + 1).coerceIn(1, 7)
+                val remoteFriend = cloudFriendsByTag[cp.authorTag]
+                val resolvedAvatar = cp.authorAvatarUrl?.takeIf { !AvatarCatalog.isBrokenUrl(it) }
+                    ?: remoteFriend?.avatarUrl?.takeIf { !AvatarCatalog.isBrokenUrl(it) }
+                    ?: mergedFriends.firstOrNull { it.friendCode == cp.authorTag }?.avatarUrl
+                    ?: ""
+                val isOwn = myTag != null && cp.authorTag == myTag
+                FeedPostItem(
+                    id = cp.id,
+                    authorName = cp.authorName,
+                    authorAvatarUrl = resolvedAvatar,
+                    habitTitle = cp.habitTitle,
+                    habitCategory = "Comunidad",
+                    content = cp.caption,
+                    timeAgo = formatRelativeTime(minutes),
+                    postImageUrl = cp.imageUri,
+                    likesCount = cp.likesCount,
+                    isLiked = myTag != null && myTag in cp.likedByTags,
+                    streakCount = remoteFriend?.currentStreak ?: activeStreakCount,
+                    isOwnPost = isOwn,
+                    createdAtMillis = cp.createdAtMillis,
+                    daysRemaining = daysRemaining,
+                    comments = cp.comments.distinctBy { "${it.authorName.trim().lowercase()}|${it.text.trim()}" }.map { c ->
+                        val cMin = ((now - c.createdAtMillis).coerceAtLeast(0L) / 60_000L).coerceAtLeast(0L)
+                        FeedCommentItem(
+                            id = c.id,
+                            postId = cp.id,
+                            authorName = c.authorName,
+                            content = c.text,
+                            timeAgo = formatRelativeTime(cMin)
+                        )
+                    }
+                )
+            }
+
+        val posts = (localPosts + cloudPosts).sortedByDescending { it.createdAtMillis }
+        val lang = data.user?.languageCode ?: _uiState.value.languageCode
+        val isEn = lang.equals("en", ignoreCase = true)
+        val pendingCount = habits.count { !it.isCompleted }
+        val nextMicro = habits.firstOrNull { !it.isCompleted && it.isMicroHabit } ?: habits.firstOrNull { !it.isCompleted }
+        val coachTip = when {
+            habits.isEmpty() -> if (isEn) "Create your first habit to start building momentum." else "Crea tu primer hábito para comenzar tu racha."
+            pendingCount == 0 -> if (isEn) "All pending habits done today! Play the Sanctuary mini-game to boost pet happiness." else "¡Todos tus pendientes completados hoy! Juega el minijuego tipo Pou para alegrar a tu mascota."
+            nextMicro != null -> if (isEn) "Coach tip: Start with \"${nextMicro.title}\" (${pendingCount} left) to earn pet XP & extend your ${activeStreakCount}d streak." else "Coach diario: Empieza con \"${nextMicro.title}\" (quedan $pendingCount) para subir XP real y tu racha de ${activeStreakCount}d."
+            else -> ""
+        }
+
         _uiState.update {
             it.copy(
                 habits = habits,
                 history = history,
                 summary = summary,
                 user = data.user,
-                friends = data.friends,
+                friends = mergedFriends,
                 isDarkMode = data.user?.isDarkMode ?: it.isDarkMode,
-                languageCode = data.user?.languageCode ?: it.languageCode,
+                languageCode = lang,
                 feedPosts = posts,
-                isLoading = data.user == null
+                isLoading = data.user == null,
+                petHappinessBonus = cloudSync?.petHappinessBonus?.value ?: it.petHappinessBonus,
+                smartCoachTip = coachTip
             )
         }
+    }
+
+    private fun formatRelativeTime(minutes: Long): String = when {
+        minutes < 1 -> "Justo ahora"
+        minutes < 60 -> "Hace $minutes min"
+        minutes < 1440 -> "Hace ${minutes / 60} h"
+        else -> "Hace ${minutes / 1440} días"
     }
 
     /**
@@ -316,12 +426,28 @@ class MainViewModel(private val repository: HabitRepository) : ViewModel() {
     // ============================================================================
 
     fun toggleLike(postId: String) = write {
-        repository.toggleLike(postId)
+        val isLocal = snapshot?.posts?.any { it.id == postId } == true
+        if (isLocal) {
+            repository.toggleLike(postId)
+        }
+        cloudSync?.toggleLikeCloudFeedPost(postId)
     }
 
-    /** Notifica el éxito para limpiar el borrador solo cuando la publicación ya está guardada. */
+    /** Sube la imagen al CDN si aplica, guarda la publicación y la replica en el Feed compartido de amigos. */
     fun publishPost(content: String, category: String, imageUrl: String?) = write {
-        repository.publish(content, category, imageUrl)
+        val cloudImage = if (appContext != null && !imageUrl.isNullOrBlank()) {
+            ImageOptimizer.uploadImageOrEncodeForCloud(appContext, imageUrl, isAvatar = false) ?: imageUrl
+        } else {
+            imageUrl
+        }
+        val persistedUrl = if (ImageOptimizer.isRemoteCdnUrl(cloudImage)) cloudImage else imageUrl
+        repository.publish(content, category, persistedUrl)
+        cloudSync?.publishCloudFeedPost(
+            postId = "cloud_${System.currentTimeMillis()}",
+            habitTitle = category.ifBlank { "Hábito diario" },
+            caption = content.trim(),
+            imageUri = cloudImage
+        )
         _uiState.update { it.copy(publicationVersion = it.publicationVersion + 1) }
     }
 
@@ -330,10 +456,20 @@ class MainViewModel(private val repository: HabitRepository) : ViewModel() {
         repository.deleteOwnPost(postId)
     }
 
-    /** Añade un comentario a una publicación del Feed. */
+    /** Añade un comentario único a una publicación del Feed (local o compartida de amigo). */
     fun addComment(postId: String, content: String) = write {
-        val author = _uiState.value.user?.displayName ?: "Mi perfil"
-        repository.addComment(postId, author, content)
+        val clean = content.trim()
+        if (clean.isEmpty()) return@write
+        val author = _uiState.value.user?.displayName ?: cloudSync?.currentSession?.value?.displayName ?: "Mi perfil"
+        val isLocal = snapshot?.posts?.any { it.id == postId } == true
+        if (isLocal) {
+            repository.addComment(postId, author, clean)
+        }
+        cloudSync?.addCommentToCloudFeedPost(
+            postId = postId,
+            commentId = "c_${System.currentTimeMillis()}",
+            text = clean
+        )
     }
 
     /** Ejecuta la confirmación de la pantalla después de persistir el perfil. */
@@ -342,20 +478,69 @@ class MainViewModel(private val repository: HabitRepository) : ViewModel() {
         onSaved()
     }
 
-    /** Persiste nombre, correo y avatar optimizado del usuario en Room. */
+    /** Persiste nombre, correo y avatar optimizado en Room y sincroniza CDN URL hacia la nube para amigos. */
     fun updateProfileWithAvatar(
         name: String,
         email: String?,
         avatarUrl: String?,
         onSaved: () -> Unit = {}
     ) = write {
-        repository.updateProfileWithAvatar(name, email, avatarUrl)
+        val cloudAvatar = if (appContext != null && !avatarUrl.isNullOrBlank()) {
+            ImageOptimizer.uploadImageOrEncodeForCloud(appContext, avatarUrl, isAvatar = true) ?: avatarUrl
+        } else {
+            avatarUrl
+        }
+        val persistedAvatar = if (ImageOptimizer.isRemoteCdnUrl(cloudAvatar)) cloudAvatar else avatarUrl
+        repository.updateProfileWithAvatar(name, email, persistedAvatar)
+        if (cloudSync != null) {
+            cloudSync.updateActiveSessionAvatar(cloudAvatar)
+            val s = _uiState.value
+            val pet = s.user?.let { PetCustomization.fromUser(it) } ?: PetCustomization()
+            cloudSync.publishCurrentUserStats(
+                completedHabits = s.summary.totalCompleted,
+                currentStreak = maxOf(s.summary.overallStreak, s.summary.microStreak),
+                petCustomization = pet,
+                userNameOverride = name
+            )
+        }
         onSaved()
     }
 
-    /** Actualiza únicamente el avatar optimizado del usuario. */
+    /** Actualiza únicamente el avatar optimizado del usuario local y publica la URL en la nube. */
     fun updateAvatar(avatarUrl: String?) = write {
-        repository.updateAvatar(avatarUrl)
+        val cloudAvatar = if (appContext != null && !avatarUrl.isNullOrBlank()) {
+            ImageOptimizer.uploadImageOrEncodeForCloud(appContext, avatarUrl, isAvatar = true) ?: avatarUrl
+        } else {
+            avatarUrl
+        }
+        val persistedAvatar = if (ImageOptimizer.isRemoteCdnUrl(cloudAvatar)) cloudAvatar else avatarUrl
+        repository.updateAvatar(persistedAvatar)
+        if (cloudSync != null) {
+            cloudSync.updateActiveSessionAvatar(cloudAvatar)
+            val s = _uiState.value
+            val pet = s.user?.let { PetCustomization.fromUser(it) } ?: PetCustomization()
+            cloudSync.publishCurrentUserStats(
+                completedHabits = s.summary.totalCompleted,
+                currentStreak = maxOf(s.summary.overallStreak, s.summary.microStreak),
+                petCustomization = pet,
+                userNameOverride = s.user?.displayName ?: cloudSync.currentSession.value?.displayName
+            )
+        }
+    }
+
+    /** Boost exclusivo de felicidad desde el minijuego tipo Pou (NO incrementa XP). */
+    fun boostPetHappinessFromMiniGame(delta: Int) {
+        cloudSync?.boostPetHappinessFromMiniGame(delta)
+    }
+
+    /** Fuerza actualización inmediata de amigos y feed compartido desde Firebase/REST. */
+    fun refreshSocialCloud() {
+        viewModelScope.launch {
+            runCatching {
+                cloudSync?.refreshFriendsRealtime()
+                cloudSync?.refreshFriendsFeed()
+            }
+        }
     }
 
     /** Persiste la personalización de mascota (especie, nombre, accesorio y hábitat) en Room. */
@@ -373,11 +558,12 @@ class MainViewModel(private val repository: HabitRepository) : ViewModel() {
         )
     }
 
-    /** Inicia o registra sesión persistente con nombre, correo y código único de 3 dígitos (#XXX). */
+    /** Inicia o registra sesión persistente con nombre, correo, código único de 3 dígitos (#XXX) y avatar opcional. */
     fun loginOrRegisterUser(
         name: String,
         email: String?,
         friendCode: String,
+        avatarUrl: String? = null,
         onSaved: () -> Unit = {}
     ) = write {
         repository.loginOrRegisterUser(
@@ -385,6 +571,9 @@ class MainViewModel(private val repository: HabitRepository) : ViewModel() {
             email = email,
             friendCode = friendCode
         )
+        if (!avatarUrl.isNullOrBlank()) {
+            repository.updateAvatar(avatarUrl)
+        }
         onSaved()
     }
 
@@ -415,12 +604,17 @@ class MainViewModel(private val repository: HabitRepository) : ViewModel() {
     // ============================================================================
 
     companion object {
-        /** Proporciona el repositorio de Room usando el contexto de aplicación. */
+        /** Proporciona el repositorio de Room junto con CloudSyncManager compartido. */
         fun factory(context: Context): ViewModelProvider.Factory = object : ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST")
             override fun <T : ViewModel> create(modelClass: Class<T>): T {
                 require(modelClass.isAssignableFrom(MainViewModel::class.java))
-                return MainViewModel(RoomHabitRepository(HabitDatabase.get(context), originalData = OriginalHabitData)) as T
+                val appCtx = context.applicationContext
+                return MainViewModel(
+                    repository = RoomHabitRepository(HabitDatabase.get(appCtx), originalData = OriginalHabitData),
+                    cloudSync = CloudSyncManager.getInstance(appCtx),
+                    appContext = appCtx
+                ) as T
             }
         }
     }

@@ -15,6 +15,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -25,6 +26,7 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
+import java.security.MessageDigest
 import java.util.concurrent.TimeUnit
 import kotlin.math.abs
 
@@ -47,11 +49,12 @@ data class AuthSession(
     val userId: String,
     val displayName: String,
     val email: String,
-    val tagCode: String, // Código de 3 dígitos entre "100" y "999"
+    val tagCode: String, // Código de 3 dígitos entre "100" y "999" asignado solo por el sistema
     val avatarUrl: String? = null,
     val isLoggedIn: Boolean = true,
     val lastSyncTimestamp: Long = System.currentTimeMillis(),
-    val syncMode: String = "Dual Cloud + Realtime REST"
+    val syncMode: String = "Dual Cloud + Realtime REST",
+    val passwordHash: String = ""
 ) {
     val normalizedTag: String
         get() = CloudSyncManager.normalizeTagCode(tagCode)
@@ -61,6 +64,100 @@ data class AuthSession(
 
     val fullHandle: String
         get() = "$displayName $formattedTag"
+}
+
+/**
+ * Comentario sincronizado en la nube para el Feed compartido entre amigos.
+ */
+data class SyncedFeedComment(
+    val id: String,
+    val authorTag: String,
+    val authorName: String,
+    val text: String,
+    val createdAtMillis: Long
+) {
+    fun toJson(): JSONObject = JSONObject().apply {
+        put("id", id)
+        put("authorTag", authorTag)
+        put("authorName", authorName)
+        put("text", text)
+        put("createdAtMillis", createdAtMillis)
+    }
+
+    companion object {
+        fun fromJson(json: JSONObject): SyncedFeedComment = SyncedFeedComment(
+            id = json.optString("id", "c_${json.hashCode()}"),
+            authorTag = json.optString("authorTag", "000"),
+            authorName = json.optString("authorName", "Amigo"),
+            text = json.optString("text", ""),
+            createdAtMillis = json.optLong("createdAtMillis", System.currentTimeMillis())
+        )
+    }
+}
+
+/**
+ * Publicación sincronizada en el Feed compartido entre amigos.
+ */
+data class SyncedFeedPost(
+    val id: String,
+    val authorTag: String,
+    val authorName: String,
+    val authorAvatarUrl: String? = null,
+    val habitTitle: String,
+    val caption: String,
+    val imageUri: String? = null,
+    val likesCount: Int = 0,
+    val likedByTags: List<String> = emptyList(),
+    val comments: List<SyncedFeedComment> = emptyList(),
+    val createdAtMillis: Long = System.currentTimeMillis()
+) {
+    fun toJson(): JSONObject = JSONObject().apply {
+        put("id", id)
+        put("authorTag", authorTag)
+        put("authorName", authorName)
+        put("authorAvatarUrl", authorAvatarUrl ?: "")
+        put("habitTitle", habitTitle)
+        put("caption", caption)
+        put("imageUri", imageUri ?: "")
+        put("likesCount", likesCount)
+        put("likedByTags", JSONArray(likedByTags))
+        put("comments", JSONArray().apply { comments.forEach { put(it.toJson()) } })
+        put("createdAtMillis", createdAtMillis)
+    }
+
+    companion object {
+        fun fromJson(json: JSONObject): SyncedFeedPost {
+            val likedArr = json.optJSONArray("likedByTags")
+            val likedList = buildList {
+                if (likedArr != null) {
+                    for (i in 0 until likedArr.length()) add(likedArr.optString(i))
+                }
+            }.filter { it.isNotBlank() }
+
+            val commentsArr = json.optJSONArray("comments")
+            val commentList = buildList {
+                if (commentsArr != null) {
+                    for (i in 0 until commentsArr.length()) {
+                        commentsArr.optJSONObject(i)?.let { add(SyncedFeedComment.fromJson(it)) }
+                    }
+                }
+            }.distinctBy { "${it.id}_${it.text.trim()}" }
+
+            return SyncedFeedPost(
+                id = json.optString("id", "post_${System.currentTimeMillis()}"),
+                authorTag = CloudSyncManager.normalizeTagCode(json.optString("authorTag", "777")),
+                authorName = json.optString("authorName", "Amigo"),
+                authorAvatarUrl = json.optString("authorAvatarUrl", "").takeIf { it.isNotBlank() },
+                habitTitle = json.optString("habitTitle", "Hábito diario"),
+                caption = json.optString("caption", ""),
+                imageUri = json.optString("imageUri", "").takeIf { it.isNotBlank() },
+                likesCount = json.optInt("likesCount", 0).coerceAtLeast(0),
+                likedByTags = likedList,
+                comments = commentList,
+                createdAtMillis = json.optLong("createdAtMillis", System.currentTimeMillis())
+            )
+        }
+    }
 }
 
 /**
@@ -80,7 +177,8 @@ data class SyncedUserProfile(
     val petHabitat: String = PetHabitat.AQUARIUM.id,
     val petLevel: Int = 1,
     val updatedAt: Long = System.currentTimeMillis(),
-    val isOnline: Boolean = true
+    val isOnline: Boolean = true,
+    val passwordHash: String = ""
 ) {
     val normalizedTag: String
         get() = CloudSyncManager.normalizeTagCode(tagCode)
@@ -136,6 +234,7 @@ data class SyncedUserProfile(
         put("petLevel", petLevel)
         put("updatedAt", updatedAt)
         put("isOnline", isOnline)
+        put("passwordHash", passwordHash)
     }
 
     companion object {
@@ -159,7 +258,8 @@ data class SyncedUserProfile(
                 petHabitat = json.optString("petHabitat", PetHabitat.AQUARIUM.id),
                 petLevel = json.optInt("petLevel", maxOf(1, habits / 10 + 1)),
                 updatedAt = json.optLong("updatedAt", System.currentTimeMillis()),
-                isOnline = json.optBoolean("isOnline", true)
+                isOnline = json.optBoolean("isOnline", true),
+                passwordHash = json.optString("passwordHash", "")
             )
         }
     }
@@ -211,6 +311,12 @@ class CloudSyncManager(context: Context) {
     private val _lastSyncMessage = MutableStateFlow("Sincronización multi-dispositivo activa")
     val lastSyncMessage: StateFlow<String> = _lastSyncMessage.asStateFlow()
 
+    private val _syncedFeedPosts = MutableStateFlow<List<SyncedFeedPost>>(emptyList())
+    val syncedFeedPosts: StateFlow<List<SyncedFeedPost>> = _syncedFeedPosts.asStateFlow()
+
+    private val _petHappinessBonus = MutableStateFlow(0)
+    val petHappinessBonus: StateFlow<Int> = _petHappinessBonus.asStateFlow()
+
     // Caché en memoria de perfiles publicados por código #100..#999
     private val publishedDirectory = mutableMapOf<String, SyncedUserProfile>()
     private var realtimeSyncJob: Job? = null
@@ -220,6 +326,8 @@ class CloudSyncManager(context: Context) {
         loadPersistedDirectory()
         loadPersistedSessions()
         loadPersistedFriends()
+        loadPersistedFeedPosts()
+        loadPetHappinessBonus()
         updateSyncModeBanner()
     }
 
@@ -275,8 +383,242 @@ class CloudSyncManager(context: Context) {
     fun getActiveOrLastSession(): AuthSession? = _currentSession.value ?: _savedSessions.value.firstOrNull()
 
     /**
-     * Registra o inicia sesión para un usuario con su Nombre, Correo y Tag de 3 dígitos (#100 a #999).
-     * Persiste tanto en `SharedPreferences` como en `HabitDatabase` (Room) para sobrevivir reinicios.
+     * Crea una cuenta nueva con contraseña obligatoria y #Tag único asignado exclusivamente por el sistema
+     * (sin permitir que el usuario lo elija ni que se repita con perfiles existentes).
+     */
+    suspend fun registerAccount(
+        name: String,
+        email: String,
+        password: String,
+        avatarUrl: String? = null,
+        completedHabits: Int = 0,
+        currentStreak: Int = 0,
+        petCustomization: PetCustomization = PetCustomization()
+    ): Result<AuthSession> = withContext(Dispatchers.IO) {
+        runCatching {
+            val cleanName = name.trim()
+            val cleanEmail = email.trim().lowercase()
+            require(cleanName.length >= 2) { "Ingresa tu nombre o alias (mínimo 2 caracteres)." }
+            require(cleanEmail.contains("@") && cleanEmail.contains(".")) {
+                "Ingresa un correo electrónico válido."
+            }
+            require(password.length >= 4) {
+                "Crea una contraseña segura de al menos 4 caracteres."
+            }
+
+            // Verificar que el correo no exista ya en cuentas locales guardadas
+            val duplicateEmail = _savedSessions.value.firstOrNull {
+                it.email.equals(cleanEmail, ignoreCase = true)
+            } ?: synchronized(publishedDirectory) {
+                publishedDirectory.values.firstOrNull { it.email.equals(cleanEmail, ignoreCase = true) }
+            }?.let { existing ->
+                AuthSession(
+                    userId = existing.userId,
+                    displayName = existing.displayName,
+                    email = existing.email ?: cleanEmail,
+                    tagCode = existing.normalizedTag
+                )
+            }
+            if (duplicateEmail != null) {
+                error("Ya existe una cuenta con ese correo (${duplicateEmail.formattedTag}). Inicia sesión con tu contraseña.")
+            }
+
+            val assignedTag = assignUniqueSystemTag(cleanName, cleanEmail)
+            val pwHash = hashPassword(password, cleanEmail)
+            val resolvedAvatar = avatarUrl?.trim()?.takeIf { it.isNotBlank() && !AvatarCatalog.isBrokenUrl(it) }
+
+            val userId = "local-user"
+            val session = AuthSession(
+                userId = userId,
+                displayName = cleanName,
+                email = cleanEmail,
+                tagCode = assignedTag,
+                avatarUrl = resolvedAvatar,
+                isLoggedIn = true,
+                lastSyncTimestamp = System.currentTimeMillis(),
+                syncMode = if (isFirebaseInitialized()) "Firebase + REST Sync" else "Dual Cloud REST + P2P",
+                passwordHash = pwHash
+            )
+            persistSession(session)
+
+            syncUserEntityInRoom(userId, cleanName, cleanEmail, assignedTag, resolvedAvatar)
+            publishCurrentUserStats(
+                completedHabits = completedHabits,
+                currentStreak = currentStreak,
+                petCustomization = petCustomization,
+                userNameOverride = cleanName
+            )
+            seedPredefinedFriendsFeed()
+            refreshFriendsFeed()
+            session
+        }
+    }
+
+    /**
+     * Inicia sesión validando correo/usuario/#Tag y contraseña obligatoria (tanto en primer ingreso
+     * como al cambiar de usuario dentro de la aplicación).
+     */
+    suspend fun authenticateAccount(
+        identifier: String,
+        password: String,
+        completedHabits: Int = 0,
+        currentStreak: Int = 0,
+        petCustomization: PetCustomization = PetCustomization()
+    ): Result<AuthSession> = withContext(Dispatchers.IO) {
+        runCatching {
+            val cleanId = identifier.trim()
+            require(cleanId.isNotEmpty()) { "Ingresa tu correo, nombre o código #Tag." }
+            require(password.length >= 4) { "Ingresa tu contraseña (mínimo 4 caracteres)." }
+
+            val cleanTagCandidate = cleanId.removePrefix("#").trim()
+            val localSession = _savedSessions.value.firstOrNull { s ->
+                s.email.equals(cleanId, ignoreCase = true) ||
+                    s.displayName.equals(cleanId, ignoreCase = true) ||
+                    (isValidTagCode(cleanTagCandidate) && s.normalizedTag == normalizeTagCode(cleanTagCandidate))
+            }
+
+            val directoryMatch = if (localSession == null) {
+                val byTag = if (isValidTagCode(cleanTagCandidate)) {
+                    val norm = normalizeTagCode(cleanTagCandidate)
+                    (if (isFirebaseInitialized()) fetchFromFirebaseFirestore(norm) else null)
+                        ?: fetchFromSharedRestRelay(norm)
+                        ?: synchronized(publishedDirectory) { publishedDirectory[norm] }
+                } else null
+
+                byTag ?: synchronized(publishedDirectory) {
+                    publishedDirectory.values.firstOrNull { p ->
+                        p.email.equals(cleanId, ignoreCase = true) ||
+                            p.displayName.equals(cleanId, ignoreCase = true)
+                    }
+                }
+            } else null
+
+            val targetEmail = (localSession?.email ?: directoryMatch?.email)?.trim()?.lowercase()
+                ?: error("Cuenta no encontrada en este dispositivo ni en la nube.")
+            val targetName = localSession?.displayName ?: directoryMatch?.displayName ?: "Usuario HabitOcto"
+            val targetTag = localSession?.normalizedTag ?: directoryMatch?.normalizedTag
+                ?: assignUniqueSystemTagLocal(targetName, targetEmail)
+            val storedHash = localSession?.passwordHash?.takeIf { it.isNotBlank() }
+                ?: directoryMatch?.passwordHash?.takeIf { it.isNotBlank() }
+                ?: ""
+            val providedHash = hashPassword(password, targetEmail)
+
+            if (storedHash.isNotBlank() && storedHash != providedHash) {
+                error("Contraseña incorrecta. Verifica tus credenciales e intenta de nuevo.")
+            }
+
+            val finalHash = storedHash.ifBlank { providedHash }
+            val resolvedAvatar = localSession?.avatarUrl ?: directoryMatch?.avatarUrl
+            val authenticated = AuthSession(
+                userId = "local-user",
+                displayName = targetName,
+                email = targetEmail,
+                tagCode = targetTag,
+                avatarUrl = resolvedAvatar,
+                isLoggedIn = true,
+                lastSyncTimestamp = System.currentTimeMillis(),
+                syncMode = if (isFirebaseInitialized()) "Firebase + REST Sync" else "Dual Cloud REST + P2P",
+                passwordHash = finalHash
+            )
+            persistSession(authenticated)
+            syncUserEntityInRoom("local-user", targetName, targetEmail, targetTag, resolvedAvatar)
+            publishCurrentUserStats(
+                completedHabits = completedHabits,
+                currentStreak = currentStreak,
+                petCustomization = petCustomization,
+                userNameOverride = targetName
+            )
+            refreshFriendsFeed()
+            authenticated
+        }
+    }
+
+    /**
+     * Asigna un código #XXX (100..999) único asignado exclusivamente por el sistema,
+     * comprobando sesiones locales, directorio y nube (Firestore / REST Relay).
+     */
+    suspend fun assignUniqueSystemTag(name: String, email: String): String = withContext(Dispatchers.IO) {
+        val localTaken = collectLocallyTakenTags(excludeEmail = email)
+        val seedNum = generateDeterministicTag(name, email).toIntOrNull() ?: 100
+        for (offset in 0 until 900) {
+            val candidate = (100 + ((seedNum - 100 + offset) % 900)).toString()
+            if (candidate in localTaken) continue
+            val remote = (if (isFirebaseInitialized()) fetchFromFirebaseFirestore(candidate) else null)
+                ?: fetchFromSharedRestRelay(candidate)
+            if (remote == null || remote.email.equals(email, ignoreCase = true)) {
+                return@withContext candidate
+            }
+        }
+        assignUniqueSystemTagLocal(name, email)
+    }
+
+    fun assignUniqueSystemTagLocal(name: String, email: String): String {
+        val taken = collectLocallyTakenTags(excludeEmail = email)
+        val seedNum = generateDeterministicTag(name, email).toIntOrNull() ?: 100
+        for (offset in 0 until 900) {
+            val candidate = (100 + ((seedNum - 100 + offset) % 900)).toString()
+            if (candidate !in taken) return candidate
+        }
+        return normalizeTagCode(seedNum.toString())
+    }
+
+    private fun collectLocallyTakenTags(excludeEmail: String): Set<String> {
+        val taken = mutableSetOf<String>()
+        _savedSessions.value
+            .filterNot { it.email.equals(excludeEmail, ignoreCase = true) }
+            .forEach { taken += it.normalizedTag }
+        _syncedFriends.value.forEach { taken += it.normalizedTag }
+        synchronized(publishedDirectory) {
+            publishedDirectory.values
+                .filterNot { it.email.equals(excludeEmail, ignoreCase = true) }
+                .forEach { taken += it.normalizedTag }
+        }
+        return taken
+    }
+
+    private suspend fun syncUserEntityInRoom(
+        userId: String,
+        name: String,
+        email: String,
+        tag: String,
+        avatarUrl: String?
+    ) {
+        runCatching {
+            val db = HabitDatabase.get(appContext)
+            val dao = db.habits()
+            val today = HabitDates.today()
+            val existing = dao.observeUser(userId).firstOrNull()?.user
+            dao.insertUser(
+                UserEntity(
+                    id = userId,
+                    displayName = name,
+                    email = email,
+                    avatarUrl = avatarUrl ?: existing?.avatarUrl,
+                    createdDay = existing?.createdDay ?: today,
+                    friendCode = tag,
+                    isLoggedIn = true,
+                    petType = existing?.petType ?: PetType.OCTO.id,
+                    petAccessory = existing?.petAccessory ?: PetAccessory.NONE.id,
+                    petHabitat = existing?.petHabitat ?: PetHabitat.AQUARIUM.id
+                )
+            )
+            dao.loginOrRegisterUser(userId, name, email, tag)
+            if (!avatarUrl.isNullOrBlank()) {
+                dao.updateAvatar(userId, avatarUrl)
+            }
+        }
+    }
+
+    /** Actualiza el avatar en la sesión activa y fuerza sincronización inmediata hacia la nube. */
+    fun updateActiveSessionAvatar(avatarUrl: String?) {
+        val active = _currentSession.value ?: return
+        val cleanAvatar = avatarUrl?.trim()?.takeIf { it.isNotBlank() && !AvatarCatalog.isBrokenUrl(it) }
+        val updated = active.copy(avatarUrl = cleanAvatar, lastSyncTimestamp = System.currentTimeMillis())
+        persistSession(updated)
+    }
+
+    /**
+     * Registra o inicia sesión asignando automáticamente un #Tag único del sistema si no se pasa uno.
      */
     suspend fun loginOrRegister(
         name: String,
@@ -284,15 +626,22 @@ class CloudSyncManager(context: Context) {
         preferredTag: String? = null,
         completedHabits: Int = 0,
         currentStreak: Int = 0,
-        petCustomization: PetCustomization = PetCustomization()
+        petCustomization: PetCustomization = PetCustomization(),
+        password: String = ""
     ): AuthSession = withContext(Dispatchers.IO) {
-        val cleanName = name.trim().ifBlank { "Suchini" }
-        val cleanEmail = email.trim().ifBlank { "${cleanName.lowercase().replace(" ", ".")}@habitocto.app" }
-        val tag = if (!preferredTag.isNullOrBlank() && isValidTagCode(preferredTag)) {
-            normalizeTagCode(preferredTag)
-        } else {
-            generateDeterministicTag(cleanName, cleanEmail)
+        val cleanName = name.trim().ifBlank { "Usuario" }
+        val cleanEmail = email.trim().lowercase().ifBlank { "${cleanName.lowercase().replace(" ", ".")}@habitocto.app" }
+        val existing = _savedSessions.value.firstOrNull {
+            it.email.equals(cleanEmail, ignoreCase = true) ||
+                (!preferredTag.isNullOrBlank() && isValidTagCode(preferredTag) && it.normalizedTag == normalizeTagCode(preferredTag))
         }
+        val tag = when {
+            existing != null -> existing.normalizedTag
+            !preferredTag.isNullOrBlank() && isValidTagCode(preferredTag) && normalizeTagCode(preferredTag) !in collectLocallyTakenTags(cleanEmail) ->
+                normalizeTagCode(preferredTag)
+            else -> assignUniqueSystemTag(cleanName, cleanEmail)
+        }
+        val pwHash = if (password.length >= 4) hashPassword(password, cleanEmail) else (existing?.passwordHash ?: "")
 
         val userId = "local-user"
         val session = AuthSession(
@@ -300,36 +649,22 @@ class CloudSyncManager(context: Context) {
             displayName = cleanName,
             email = cleanEmail,
             tagCode = tag,
+            avatarUrl = existing?.avatarUrl,
             isLoggedIn = true,
             lastSyncTimestamp = System.currentTimeMillis(),
-            syncMode = if (isFirebaseInitialized()) "Firebase + REST Sync" else "Dual Cloud REST + P2P"
+            syncMode = if (isFirebaseInitialized()) "Firebase + REST Sync" else "Dual Cloud REST + P2P",
+            passwordHash = pwHash
         )
 
         persistSession(session)
-
-        // Sincronizar también con la entidad UserEntity en Room para que toda la app vea el cambio
-        runCatching {
-            val db = HabitDatabase.get(appContext)
-            val dao = db.habits()
-            val today = HabitDates.today()
-            dao.insertUser(
-                UserEntity(
-                    id = userId,
-                    displayName = cleanName,
-                    email = cleanEmail,
-                    createdDay = today,
-                    friendCode = tag,
-                    isLoggedIn = true
-                )
-            )
-            dao.loginOrRegisterUser(userId, cleanName, cleanEmail, tag)
-        }
+        syncUserEntityInRoom(userId, cleanName, cleanEmail, tag, session.avatarUrl)
 
         // Publicar perfil inmediatamente en el directorio y nube
         publishCurrentUserStats(
             completedHabits = completedHabits,
             currentStreak = currentStreak,
-            petCustomization = petCustomization
+            petCustomization = petCustomization,
+            userNameOverride = cleanName
         )
 
         session
@@ -352,12 +687,14 @@ class CloudSyncManager(context: Context) {
         petCustomization: PetCustomization = PetCustomization(),
         onComplete: (AuthSession) -> Unit = {}
     ) {
-        val cleanName = name.trim().ifBlank { "Suchini" }
-        val cleanEmail = email.trim().ifBlank { "${cleanName.lowercase().replace(" ", ".")}@habitocto.app" }
-        val tag = if (!preferredTag.isNullOrBlank() && isValidTagCode(preferredTag)) {
+        val cleanName = name.trim().ifBlank { "Usuario" }
+        val cleanEmail = email.trim().lowercase().ifBlank { "${cleanName.lowercase().replace(" ", ".")}@habitocto.app" }
+        val tag = if (!preferredTag.isNullOrBlank() && isValidTagCode(preferredTag) &&
+            normalizeTagCode(preferredTag) !in collectLocallyTakenTags(cleanEmail)
+        ) {
             normalizeTagCode(preferredTag)
         } else {
-            generateDeterministicTag(cleanName, cleanEmail)
+            assignUniqueSystemTagLocal(cleanName, cleanEmail)
         }
 
         val immediateSession = AuthSession(
@@ -459,19 +796,17 @@ class CloudSyncManager(context: Context) {
 
             val activeRaw = prefs.getString(KEY_ACTIVE_SESSION, null)
             if (!activeRaw.isNullOrBlank()) {
-                _currentSession.value = jsonToSession(JSONObject(activeRaw))
-            } else if (list.isNotEmpty()) {
-                _currentSession.value = list.first()
+                val restored = jsonToSession(JSONObject(activeRaw))
+                if (restored.isLoggedIn && restored.passwordHash.isNotBlank()) {
+                    _currentSession.value = restored
+                } else {
+                    _currentSession.value = null
+                    prefs.edit().remove(KEY_ACTIVE_SESSION).apply()
+                }
             } else {
-                // Sesión predeterminada inicial para que el usuario tenga un #Código activo desde el primer uso
-                val defaultSession = AuthSession(
-                    userId = "local-user",
-                    displayName = "Suchini",
-                    email = "suchini@habitocto.app",
-                    tagCode = "777",
-                    isLoggedIn = true
-                )
-                persistSession(defaultSession)
+                // Sin sesión previa (primera instalación desde APK, repo o Android Studio):
+                // permanecer sin autenticar para mostrar la pantalla de Login / Crear cuenta.
+                _currentSession.value = null
             }
         }
     }
@@ -485,17 +820,19 @@ class CloudSyncManager(context: Context) {
         put("isLoggedIn", session.isLoggedIn)
         put("lastSyncTimestamp", session.lastSyncTimestamp)
         put("syncMode", session.syncMode)
+        put("passwordHash", session.passwordHash)
     }
 
     private fun jsonToSession(json: JSONObject): AuthSession = AuthSession(
         userId = json.optString("userId", "local-user"),
-        displayName = json.optString("displayName", "Suchini"),
-        email = json.optString("email", "suchini@habitocto.app"),
-        tagCode = normalizeTagCode(json.optString("tagCode", "777")),
+        displayName = json.optString("displayName", "Usuario"),
+        email = json.optString("email", ""),
+        tagCode = normalizeTagCode(json.optString("tagCode", "100")),
         avatarUrl = json.optString("avatarUrl", "").takeIf { it.isNotBlank() },
-        isLoggedIn = json.optBoolean("isLoggedIn", true),
+        isLoggedIn = json.optBoolean("isLoggedIn", false),
         lastSyncTimestamp = json.optLong("lastSyncTimestamp", System.currentTimeMillis()),
-        syncMode = json.optString("syncMode", "Dual Cloud + Realtime REST")
+        syncMode = json.optString("syncMode", "Dual Cloud + Realtime REST"),
+        passwordHash = json.optString("passwordHash", "")
     )
 
     // ============================================================================
@@ -537,7 +874,8 @@ class CloudSyncManager(context: Context) {
             petHabitat = petCustomization.habitat.id,
             petLevel = level,
             updatedAt = System.currentTimeMillis(),
-            isOnline = true
+            isOnline = true,
+            passwordHash = session.passwordHash
         )
 
         // 1. Actualizar directorio local persistente
@@ -652,6 +990,7 @@ class CloudSyncManager(context: Context) {
             registerSyncedFriend(resolvedProfile)
             // También lo publicamos al relay para que otros dispositivos vean la actualización
             pushToSharedRestRelay(resolvedProfile)
+            runCatching { refreshFriendsFeed() }
 
             _syncState.value = if (fromFirebase != null) {
                 CloudSyncState.SYNCED_FIREBASE
@@ -711,6 +1050,7 @@ class CloudSyncManager(context: Context) {
         }
         _syncedFriends.value = updated
         savePersistedFriends(updated)
+        runCatching { refreshFriendsFeed() }
         updated
     }
 
@@ -807,6 +1147,8 @@ class CloudSyncManager(context: Context) {
                 put("tagCode", JSONObject().put("stringValue", profile.normalizedTag))
                 put("displayName", JSONObject().put("stringValue", profile.displayName))
                 put("email", JSONObject().put("stringValue", profile.email ?: ""))
+                put("avatarUrl", JSONObject().put("stringValue", profile.avatarUrl ?: ""))
+                put("passwordHash", JSONObject().put("stringValue", profile.passwordHash))
                 put("score", JSONObject().put("integerValue", profile.score.toString()))
                 put("completedHabits", JSONObject().put("integerValue", profile.completedHabits.toString()))
                 put("currentStreak", JSONObject().put("integerValue", profile.currentStreak.toString()))
@@ -846,6 +1188,7 @@ class CloudSyncManager(context: Context) {
                     tagCode = tagCode,
                     displayName = fields.optJSONObject("displayName")?.optString("stringValue") ?: "Amigo #$tagCode",
                     email = fields.optJSONObject("email")?.optString("stringValue")?.takeIf { it.isNotBlank() },
+                    avatarUrl = fields.optJSONObject("avatarUrl")?.optString("stringValue")?.takeIf { it.isNotBlank() },
                     score = score,
                     completedHabits = habits,
                     currentStreak = streak,
@@ -855,7 +1198,8 @@ class CloudSyncManager(context: Context) {
                     petLevel = fields.optJSONObject("petLevel")?.optString("integerValue")?.toIntOrNull()
                         ?: maxOf(1, habits / 10 + 1),
                     updatedAt = fields.optJSONObject("updatedAt")?.optString("integerValue")?.toLongOrNull()
-                        ?: System.currentTimeMillis()
+                        ?: System.currentTimeMillis(),
+                    passwordHash = fields.optJSONObject("passwordHash")?.optString("stringValue").orEmpty()
                 )
             }
         }.getOrNull()
@@ -913,6 +1257,7 @@ class CloudSyncManager(context: Context) {
                 tagCode = "101",
                 displayName = "Sofía Mendoza",
                 email = "sofia.mendoza@habitocto.app",
+                avatarUrl = "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=200",
                 score = 1850,
                 completedHabits = 15,
                 currentStreak = 7,
@@ -926,6 +1271,7 @@ class CloudSyncManager(context: Context) {
                 tagCode = "204",
                 displayName = "Carlos Ruiz",
                 email = "carlos.ruiz@habitocto.app",
+                avatarUrl = "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=200",
                 score = 1420,
                 completedHabits = 11,
                 currentStreak = 6,
@@ -939,6 +1285,7 @@ class CloudSyncManager(context: Context) {
                 tagCode = "309",
                 displayName = "Valeria Gómez",
                 email = "valeria.gomez@habitocto.app",
+                avatarUrl = "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=200",
                 score = 980,
                 completedHabits = 8,
                 currentStreak = 4,
@@ -952,6 +1299,7 @@ class CloudSyncManager(context: Context) {
                 tagCode = "412",
                 displayName = "Mateo Silva",
                 email = "mateo.silva@habitocto.app",
+                avatarUrl = "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400",
                 score = 740,
                 completedHabits = 6,
                 currentStreak = 3,
@@ -965,6 +1313,7 @@ class CloudSyncManager(context: Context) {
                 tagCode = "555",
                 displayName = "Diego Morales",
                 email = "diego.morales@habitocto.app",
+                avatarUrl = "https://images.unsplash.com/photo-1522075469751-3a6694fb2f61?w=200",
                 score = 1600,
                 completedHabits = 13,
                 currentStreak = 6,
@@ -978,6 +1327,7 @@ class CloudSyncManager(context: Context) {
                 tagCode = "888",
                 displayName = "Camila Vargas",
                 email = "camila.vargas@habitocto.app",
+                avatarUrl = "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=200",
                 score = 2100,
                 completedHabits = 17,
                 currentStreak = 8,
@@ -1070,15 +1420,307 @@ class CloudSyncManager(context: Context) {
         } ?: getDeterministicProfileForTag(clean)
     }
 
+    // ============================================================================
+    // FEED COMPARTIDO ENTRE AMIGOS EN LA NUBE (POSTS, COMENTARIOS Y LIKES)
+    // ============================================================================
+
+    /** Publica una nueva entrada en el feed compartido y la sincroniza en Firebase/REST por #Tag. */
+    suspend fun publishCloudFeedPost(
+        postId: String,
+        habitTitle: String,
+        caption: String,
+        imageUri: String?
+    ): SyncedFeedPost? = withContext(Dispatchers.IO) {
+        val session = _currentSession.value ?: return@withContext null
+        val myTag = session.normalizedTag
+        val now = System.currentTimeMillis()
+        val newPost = SyncedFeedPost(
+            id = postId,
+            authorTag = myTag,
+            authorName = "${session.displayName} ${session.formattedTag}",
+            authorAvatarUrl = session.avatarUrl,
+            habitTitle = habitTitle,
+            caption = caption,
+            imageUri = imageUri?.trim()?.takeIf { it.isNotBlank() && !AvatarCatalog.isBrokenUrl(it) },
+            likesCount = 0,
+            likedByTags = emptyList(),
+            comments = emptyList(),
+            createdAtMillis = now
+        )
+        val merged = (_syncedFeedPosts.value.filterNot { it.id == newPost.id } + newPost)
+            .sortedByDescending { it.createdAtMillis }
+            .take(50)
+        _syncedFeedPosts.value = merged
+        savePersistedFeedPosts(merged)
+
+        val myBucket = merged.filter { it.authorTag == myTag }.take(15)
+        if (isFirebaseInitialized()) pushFeedBucketToFirestore(myTag, myBucket)
+        pushFeedBucketToRestRelay(myTag, myBucket)
+        newPost
+    }
+
+    /** Agrega un comentario único al post (sin duplicar por id o texto repetido inmediato). */
+    suspend fun addCommentToCloudFeedPost(
+        postId: String,
+        commentId: String,
+        text: String
+    ) = withContext(Dispatchers.IO) {
+        val session = _currentSession.value ?: return@withContext
+        val cleanText = text.trim()
+        if (cleanText.isEmpty()) return@withContext
+        val comment = SyncedFeedComment(
+            id = commentId,
+            authorTag = session.normalizedTag,
+            authorName = session.displayName,
+            text = cleanText,
+            createdAtMillis = System.currentTimeMillis()
+        )
+        var targetAuthorTag: String? = null
+        val updated = _syncedFeedPosts.value.map { post ->
+            if (post.id == postId) {
+                targetAuthorTag = post.authorTag
+                val alreadyExists = post.comments.any {
+                    it.id == comment.id || (it.authorTag == comment.authorTag && it.text.trim() == cleanText)
+                }
+                if (alreadyExists) post else post.copy(comments = post.comments + comment)
+            } else {
+                post
+            }
+        }
+        _syncedFeedPosts.value = updated
+        savePersistedFeedPosts(updated)
+        targetAuthorTag?.let { authorTag ->
+            val bucket = updated.filter { it.authorTag == authorTag }.take(15)
+            if (isFirebaseInitialized()) pushFeedBucketToFirestore(authorTag, bucket)
+            pushFeedBucketToRestRelay(authorTag, bucket)
+        }
+    }
+
+    /** Alterna Me Gusta en una publicación compartida y sincroniza con el dueño del post. */
+    suspend fun toggleLikeCloudFeedPost(postId: String, likesCountOverride: Int? = null) = withContext(Dispatchers.IO) {
+        val myTag = _currentSession.value?.normalizedTag ?: return@withContext
+        var targetAuthorTag: String? = null
+        val updated = _syncedFeedPosts.value.map { post ->
+            if (post.id == postId) {
+                targetAuthorTag = post.authorTag
+                val hasLiked = myTag in post.likedByTags
+                val nextTags = if (hasLiked) post.likedByTags - myTag else post.likedByTags + myTag
+                val nextCount = likesCountOverride ?: if (hasLiked) maxOf(0, post.likesCount - 1) else post.likesCount + 1
+                post.copy(likesCount = nextCount, likedByTags = nextTags)
+            } else {
+                post
+            }
+        }
+        _syncedFeedPosts.value = updated
+        savePersistedFeedPosts(updated)
+        targetAuthorTag?.let { authorTag ->
+            val bucket = updated.filter { it.authorTag == authorTag }.take(15)
+            if (isFirebaseInitialized()) pushFeedBucketToFirestore(authorTag, bucket)
+            pushFeedBucketToRestRelay(authorTag, bucket)
+        }
+    }
+
+    /** Sincroniza publicaciones del usuario actual y de todos sus amigos agregados. */
+    suspend fun refreshFriendsFeed(): List<SyncedFeedPost> = withContext(Dispatchers.IO) {
+        val myTag = _currentSession.value?.normalizedTag
+        val friendTags = _syncedFriends.value.map { it.normalizedTag }.toSet()
+        val tagsToPull = (friendTags + listOfNotNull(myTag)).distinct()
+        if (tagsToPull.isEmpty()) return@withContext _syncedFeedPosts.value
+
+        val remoteCollected = mutableMapOf<String, SyncedFeedPost>()
+        _syncedFeedPosts.value.forEach { remoteCollected[it.id] = it }
+
+        tagsToPull.forEach { tag ->
+            val bucket = (if (isFirebaseInitialized()) fetchFeedBucketFromFirestore(tag) else null)
+                ?: fetchFeedBucketFromRestRelay(tag)
+            bucket?.forEach { remotePost ->
+                val existing = remoteCollected[remotePost.id]
+                if (existing == null) {
+                    remoteCollected[remotePost.id] = remotePost
+                } else {
+                    val mergedComments = (existing.comments + remotePost.comments)
+                        .distinctBy { "${it.id}_${it.text.trim()}" }
+                        .sortedBy { it.createdAtMillis }
+                    remoteCollected[remotePost.id] = remotePost.copy(
+                        likesCount = maxOf(existing.likesCount, remotePost.likesCount),
+                        likedByTags = (existing.likedByTags + remotePost.likedByTags).distinct(),
+                        comments = mergedComments
+                    )
+                }
+            }
+        }
+
+        val visibleSet = tagsToPull.toSet()
+        val mergedList = remoteCollected.values
+            .filter { it.authorTag in visibleSet }
+            .sortedByDescending { it.createdAtMillis }
+            .take(50)
+        _syncedFeedPosts.value = mergedList
+        savePersistedFeedPosts(mergedList)
+        mergedList
+    }
+
+    private fun seedPredefinedFriendsFeed() {
+        if (_syncedFeedPosts.value.isNotEmpty()) return
+        val now = System.currentTimeMillis()
+        val seedPosts = listOf(
+            SyncedFeedPost(
+                id = "cloud_seed_101",
+                authorTag = "101",
+                authorName = "Sofía Mendoza #101",
+                authorAvatarUrl = "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=200",
+                habitTitle = "Meditación matutina 10m",
+                caption = "¡Día 7 seguido cuidando mi enfoque y subiendo al ranking de amigos! 🧘‍♀️",
+                likesCount = 5,
+                comments = emptyList(),
+                createdAtMillis = now - 3_600_000L
+            ),
+            SyncedFeedPost(
+                id = "cloud_seed_204",
+                authorTag = "204",
+                authorName = "Carlos Ruiz #204",
+                authorAvatarUrl = "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=200",
+                habitTitle = "Correr 5km",
+                caption = "Cerrando la ruta vespertina con buena energía 🏃‍♂️💨",
+                likesCount = 4,
+                comments = emptyList(),
+                createdAtMillis = now - 7_200_000L
+            )
+        )
+        _syncedFeedPosts.value = seedPosts
+        savePersistedFeedPosts(seedPosts)
+    }
+
+    private fun loadPersistedFeedPosts() {
+        runCatching {
+            val raw = prefs.getString(KEY_SYNCED_FEED_POSTS, null)
+            if (!raw.isNullOrBlank()) {
+                val arr = JSONArray(raw)
+                val list = mutableListOf<SyncedFeedPost>()
+                for (i in 0 until arr.length()) {
+                    list += SyncedFeedPost.fromJson(arr.getJSONObject(i))
+                }
+                _syncedFeedPosts.value = list.sortedByDescending { it.createdAtMillis }
+            }
+        }
+    }
+
+    private fun savePersistedFeedPosts(list: List<SyncedFeedPost>) {
+        runCatching {
+            val arr = JSONArray()
+            list.forEach { arr.put(it.toJson()) }
+            prefs.edit().putString(KEY_SYNCED_FEED_POSTS, arr.toString()).apply()
+        }
+    }
+
+    private fun pushFeedBucketToFirestore(tagCode: String, posts: List<SyncedFeedPost>): Boolean {
+        val projectId = getFirebaseProjectId() ?: return false
+        return runCatching {
+            val url =
+                "https://firestore.googleapis.com/v1/projects/$projectId/databases/(default)/documents/habitocto_feeds/$tagCode"
+            val arr = JSONArray()
+            posts.forEach { arr.put(it.toJson()) }
+            val fields = JSONObject().apply {
+                put("tagCode", JSONObject().put("stringValue", tagCode))
+                put("postsJson", JSONObject().put("stringValue", arr.toString()))
+                put("updatedAt", JSONObject().put("integerValue", System.currentTimeMillis().toString()))
+            }
+            val bodyJson = JSONObject().put("fields", fields).toString()
+            val req = Request.Builder().url(url).patch(bodyJson.toRequestBody(JSON_MEDIA_TYPE)).build()
+            httpClient.newCall(req).execute().use { it.isSuccessful }
+        }.getOrDefault(false)
+    }
+
+    private fun fetchFeedBucketFromFirestore(tagCode: String): List<SyncedFeedPost>? {
+        val projectId = getFirebaseProjectId() ?: return null
+        return runCatching {
+            val url =
+                "https://firestore.googleapis.com/v1/projects/$projectId/databases/(default)/documents/habitocto_feeds/$tagCode"
+            val req = Request.Builder().url(url).get().build()
+            httpClient.newCall(req).execute().use { resp ->
+                if (!resp.isSuccessful) return@use null
+                val body = resp.body?.string() ?: return@use null
+                val fields = JSONObject(body).optJSONObject("fields") ?: return@use null
+                val rawArr = fields.optJSONObject("postsJson")?.optString("stringValue") ?: return@use null
+                val arr = JSONArray(rawArr)
+                buildList<SyncedFeedPost> {
+                    for (i in 0 until arr.length()) add(SyncedFeedPost.fromJson(arr.getJSONObject(i)))
+                }
+            }
+        }.getOrNull()
+    }
+
+    private fun pushFeedBucketToRestRelay(tagCode: String, posts: List<SyncedFeedPost>): Boolean {
+        val customEndpoint = prefs.getString(KEY_CUSTOM_REST_URL, null)
+        if (isRobolectricTest && customEndpoint.isNullOrBlank()) return false
+        val endpoint = customEndpoint ?: DEFAULT_REST_BASE_URL
+        return runCatching {
+            val arr = JSONArray()
+            posts.forEach { arr.put(it.toJson()) }
+            val req = Request.Builder()
+                .url("$endpoint/habitocto_feed_$tagCode")
+                .put(JSONObject().put("posts", arr).toString().toRequestBody(JSON_MEDIA_TYPE))
+                .header("Accept", "application/json")
+                .build()
+            httpClient.newCall(req).execute().use { it.isSuccessful }
+        }.getOrDefault(false)
+    }
+
+    private fun fetchFeedBucketFromRestRelay(tagCode: String): List<SyncedFeedPost>? {
+        val customEndpoint = prefs.getString(KEY_CUSTOM_REST_URL, null)
+        if (isRobolectricTest && customEndpoint.isNullOrBlank()) return null
+        val endpoint = customEndpoint ?: DEFAULT_REST_BASE_URL
+        return runCatching {
+            val req = Request.Builder()
+                .url("$endpoint/habitocto_feed_$tagCode")
+                .get()
+                .header("Accept", "application/json")
+                .build()
+            httpClient.newCall(req).execute().use { resp ->
+                if (!resp.isSuccessful) return@use null
+                val raw = resp.body?.string() ?: return@use null
+                val arr = JSONObject(raw).optJSONArray("posts") ?: return@use null
+                buildList<SyncedFeedPost> {
+                    for (i in 0 until arr.length()) add(SyncedFeedPost.fromJson(arr.getJSONObject(i)))
+                }
+            }
+        }.getOrNull()
+    }
+
+    // ============================================================================
+    // FELICIDAD DE MASCOTA DESDE EL MINIJUEGO TIPO POU (SIN OTORGAR XP)
+    // ============================================================================
+
+    /** Incrementa únicamente la felicidad de la mascota al jugar el minijuego tipo Pou (0 XP añadida). */
+    fun boostPetHappinessFromMiniGame(deltaHappiness: Int): Int {
+        val updated = (_petHappinessBonus.value + deltaHappiness).coerceIn(0, 35)
+        _petHappinessBonus.value = updated
+        prefs.edit().putInt(KEY_PET_HAPPINESS_BONUS, updated).apply()
+        return updated
+    }
+
+    private fun loadPetHappinessBonus() {
+        _petHappinessBonus.value = prefs.getInt(KEY_PET_HAPPINESS_BONUS, 0).coerceIn(0, 35)
+    }
+
     companion object {
         private const val PREFS_NAME = "habitocto_cloud_sync_prefs"
         private const val KEY_ACTIVE_SESSION = "active_auth_session"
         private const val KEY_SAVED_SESSIONS = "saved_auth_sessions"
         private const val KEY_SYNCED_FRIENDS = "synced_friends_list"
         private const val KEY_PUBLISHED_DIRECTORY = "published_tag_directory"
+        private const val KEY_SYNCED_FEED_POSTS = "synced_shared_feed_posts"
+        private const val KEY_PET_HAPPINESS_BONUS = "pet_minigame_happiness_bonus"
         private const val KEY_CUSTOM_REST_URL = "custom_rest_endpoint"
         private const val DEFAULT_REST_BASE_URL = "https://kvdb.io/A6Xy9HabitOctoSyncV1"
         private val JSON_MEDIA_TYPE = "application/json; charset=utf-8".toMediaType()
+
+        /** Hash SHA-256 seguro con sal para credenciales de usuario (nunca guarda contraseña plana). */
+        fun hashPassword(password: String, salt: String = "habitocto_v1"): String {
+            val digest = MessageDigest.getInstance("SHA-256")
+            val bytes = digest.digest("$salt|${password}".toByteArray(Charsets.UTF_8))
+            return bytes.joinToString("") { "%02x".format(it) }
+        }
 
         private val DETERMINISTIC_FIRST_NAMES = listOf(
             "Alejandro", "Lucía", "Sebastián", "Mariana", "Nicolás",

@@ -4,10 +4,20 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
+import android.util.Base64
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.MultipartBody
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
+import org.json.JSONObject
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileOutputStream
 import java.util.Locale
+import java.util.concurrent.TimeUnit
 import kotlin.math.max
 import kotlin.math.roundToInt
 
@@ -291,5 +301,253 @@ object ImageOptimizer {
         if (kb < 1024.0) return String.format(Locale.US, "%.0f KB", kb)
         val mb = kb / 1024.0
         return String.format(Locale.US, "%.1f MB", mb)
+    }
+
+    private val isRobolectricUnitTest: Boolean by lazy {
+        runCatching { Class.forName("org.robolectric.Robolectric") != null }.getOrDefault(false)
+    }
+
+    private val cdnHttpClient: OkHttpClient by lazy {
+        OkHttpClient.Builder()
+            .connectTimeout(8, TimeUnit.SECONDS)
+            .readTimeout(15, TimeUnit.SECONDS)
+            .writeTimeout(15, TimeUnit.SECONDS)
+            .build()
+    }
+
+    /** Devuelve `true` si la referencia ya apunta a un CDN externo por HTTP/HTTPS. */
+    fun isRemoteCdnUrl(url: String?): Boolean {
+        val clean = url?.trim().orEmpty()
+        return clean.startsWith("https://", ignoreCase = true) ||
+            clean.startsWith("http://", ignoreCase = true)
+    }
+
+    /**
+     * Sube la imagen optimizada a un CDN externo (`Cloudinary` -> `Cloudflare Images` -> `FreeImage.host`
+     * -> `Catbox.moe`), respalda en Firestore `habitocto_media` si la red CDN falla, y únicamente usa
+     * Data-URI JPEG compacto si el dispositivo está completamente sin conexión.
+     */
+    suspend fun uploadImageOrEncodeForCloud(
+        context: Context,
+        imageUriString: String,
+        isAvatar: Boolean = true
+    ): String? = withContext(Dispatchers.IO) {
+        val trimmed = imageUriString.trim()
+        if (trimmed.isEmpty()) return@withContext null
+        if (isRemoteCdnUrl(trimmed)) {
+            return@withContext trimmed
+        }
+
+        val uri = runCatching { Uri.parse(trimmed) }.getOrNull() ?: return@withContext null
+        val targetDim = if (isAvatar) 192 else 480
+        val maxBytes = if (isAvatar) 36_000 else 72_000
+
+        val bitmap = decodeScaledBitmapFromUri(context, uri, targetDim) ?: return@withContext null
+        val jpegBytes = compressBitmapToBudget(bitmap, targetDim, maxBytes)
+        if (!bitmap.isRecycled) {
+            bitmap.recycle()
+        }
+        if (jpegBytes == null || jpegBytes.isEmpty()) return@withContext null
+
+        val b64 = Base64.encodeToString(jpegBytes, Base64.NO_WRAP)
+
+        if (!isRobolectricUnitTest) {
+            // 1. Intento directo a Cloudinary si está configurado en .env / BuildConfig
+            uploadToCloudinaryIfConfigured(jpegBytes)?.let { return@withContext it }
+
+            // 2. Intento directo a Cloudflare Images si está configurado en .env / BuildConfig
+            uploadToCloudflareIfConfigured(jpegBytes)?.let { return@withContext it }
+
+            // 3. Subida automática a CDN externo FreeImage (respaldado por CDN Cloudflare -> https://iili.io/...)
+            uploadToFreeImageCdn(b64)?.let { return@withContext it }
+
+            // 4. Subida automática a CDN externo Catbox (-> https://files.catbox.moe/...)
+            uploadToCatboxCdn(jpegBytes)?.let { return@withContext it }
+
+            // 5. Respaldo cloud en colección Firestore `habitocto_media`
+            uploadToFirebaseFirestoreMedia(jpegBytes, b64)
+        }
+
+        // Fallback portable sin conexión (Data-URI JPEG compacta sincronizable en Firestore/REST)
+        "data:image/jpeg;base64,$b64"
+    }
+
+    private fun decodeScaledBitmapFromUri(context: Context, uri: Uri, maxDim: Int): Bitmap? {
+        return runCatching {
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            openStreamForUri(context, uri)?.use { stream ->
+                BitmapFactory.decodeStream(stream, null, bounds)
+            }
+            val opts = BitmapFactory.Options().apply {
+                inSampleSize = calculateInSampleSize(bounds.outWidth, bounds.outHeight, maxDim)
+                inPreferredConfig = Bitmap.Config.ARGB_8888
+            }
+            openStreamForUri(context, uri)?.use { stream ->
+                BitmapFactory.decodeStream(stream, null, opts)
+            }
+        }.getOrNull()
+    }
+
+    private fun openStreamForUri(context: Context, uri: Uri) = when {
+        uri.scheme.equals("file", ignoreCase = true) && !uri.path.isNullOrBlank() ->
+            File(uri.path!!).takeIf { it.exists() }?.inputStream()
+        uri.scheme.isNullOrBlank() ->
+            File(uri.toString()).takeIf { it.exists() }?.inputStream()
+        else -> context.contentResolver.openInputStream(uri)
+    }
+
+    private fun compressBitmapToBudget(source: Bitmap, maxDim: Int, maxBytes: Int): ByteArray? {
+        val scaled = scaleProportionally(source, maxDim)
+        return try {
+            var quality = 78
+            var result: ByteArray
+            do {
+                val out = ByteArrayOutputStream()
+                scaled.compress(Bitmap.CompressFormat.JPEG, quality, out)
+                result = out.toByteArray()
+                quality -= 12
+            } while (result.size > maxBytes && quality >= 30)
+            result
+        } finally {
+            if (scaled !== source && !scaled.isRecycled) {
+                scaled.recycle()
+            }
+        }
+    }
+
+    private fun readBuildConfigField(fieldName: String): String? = runCatching {
+        val clazz = Class.forName("com.example.BuildConfig")
+        val value = clazz.getField(fieldName).get(null) as? String
+        value?.trim()?.takeIf { it.isNotEmpty() && !it.startsWith("MY_") }
+    }.getOrNull()
+
+    private fun uploadToCloudinaryIfConfigured(jpegBytes: ByteArray): String? {
+        val cloudName = readBuildConfigField("CLOUDINARY_CLOUD_NAME") ?: return null
+        val uploadPreset = readBuildConfigField("CLOUDINARY_UPLOAD_PRESET") ?: return null
+        return runCatching {
+            val body = MultipartBody.Builder()
+                .setType(MultipartBody.FORM)
+                .addFormDataPart("upload_preset", uploadPreset)
+                .addFormDataPart(
+                    "file",
+                    "habitocto_media.jpg",
+                    jpegBytes.toRequestBody("image/jpeg".toMediaType())
+                )
+                .build()
+            val req = Request.Builder()
+                .url("https://api.cloudinary.com/v1_1/$cloudName/image/upload")
+                .post(body)
+                .build()
+            cdnHttpClient.newCall(req).execute().use { resp ->
+                if (!resp.isSuccessful) return@use null
+                val json = JSONObject(resp.body?.string().orEmpty())
+                json.optString("secure_url").takeIf { isRemoteCdnUrl(it) }
+            }
+        }.getOrNull()
+    }
+
+    private fun uploadToCloudflareIfConfigured(jpegBytes: ByteArray): String? {
+        val uploadUrl = readBuildConfigField("CLOUDFLARE_IMAGE_UPLOAD_URL") ?: return null
+        val token = readBuildConfigField("CLOUDFLARE_IMAGES_TOKEN") ?: return null
+        return runCatching {
+            val body = MultipartBody.Builder()
+                .setType(MultipartBody.FORM)
+                .addFormDataPart(
+                    "file",
+                    "habitocto_media.jpg",
+                    jpegBytes.toRequestBody("image/jpeg".toMediaType())
+                )
+                .build()
+            val req = Request.Builder()
+                .url(uploadUrl)
+                .addHeader("Authorization", "Bearer $token")
+                .post(body)
+                .build()
+            cdnHttpClient.newCall(req).execute().use { resp ->
+                if (!resp.isSuccessful) return@use null
+                val json = JSONObject(resp.body?.string().orEmpty())
+                val resultObj = json.optJSONObject("result")
+                val variants = resultObj?.optJSONArray("variants")
+                if (variants != null && variants.length() > 0) {
+                    variants.optString(0).takeIf { isRemoteCdnUrl(it) }
+                } else {
+                    null
+                }
+            }
+        }.getOrNull()
+    }
+
+    private fun uploadToFreeImageCdn(base64Jpeg: String): String? {
+        val uploadUrl = readBuildConfigField("FREEIMAGE_UPLOAD_API_URL")
+            ?: "https://freeimage.host/api/1/upload"
+        val apiKey = readBuildConfigField("FREEIMAGE_UPLOAD_API_KEY")
+            ?: "6d207e02198a847aa98d0a2a901485a5"
+        return runCatching {
+            val body = MultipartBody.Builder()
+                .setType(MultipartBody.FORM)
+                .addFormDataPart("key", apiKey)
+                .addFormDataPart("action", "upload")
+                .addFormDataPart("format", "json")
+                .addFormDataPart("source", base64Jpeg)
+                .build()
+            val req = Request.Builder()
+                .url(uploadUrl)
+                .addHeader("User-Agent", "HabitOcto/1.0")
+                .post(body)
+                .build()
+            cdnHttpClient.newCall(req).execute().use { resp ->
+                if (!resp.isSuccessful) return@use null
+                val json = JSONObject(resp.body?.string().orEmpty())
+                val imageObj = json.optJSONObject("image")
+                imageObj?.optString("url")?.takeIf { isRemoteCdnUrl(it) }
+            }
+        }.getOrNull()
+    }
+
+    private fun uploadToCatboxCdn(jpegBytes: ByteArray): String? {
+        val uploadUrl = readBuildConfigField("CATBOX_UPLOAD_API_URL")
+            ?: "https://catbox.moe/user/api.php"
+        return runCatching {
+            val body = MultipartBody.Builder()
+                .setType(MultipartBody.FORM)
+                .addFormDataPart("reqtype", "fileupload")
+                .addFormDataPart(
+                    "fileToUpload",
+                    "habitocto_media.jpg",
+                    jpegBytes.toRequestBody("image/jpeg".toMediaType())
+                )
+                .build()
+            val req = Request.Builder()
+                .url(uploadUrl)
+                .addHeader("User-Agent", "HabitOcto/1.0")
+                .post(body)
+                .build()
+            cdnHttpClient.newCall(req).execute().use { resp ->
+                if (!resp.isSuccessful) return@use null
+                val url = resp.body?.string()?.trim().orEmpty()
+                url.takeIf { isRemoteCdnUrl(it) }
+            }
+        }.getOrNull()
+    }
+
+    private fun uploadToFirebaseFirestoreMedia(jpegBytes: ByteArray, base64Jpeg: String): Boolean {
+        val projectId = readBuildConfigField("FIREBASE_STORAGE_PROJECT_ID") ?: "habitocto-suchini-2026"
+        return runCatching {
+            val digest = java.security.MessageDigest.getInstance("SHA-256").digest(jpegBytes)
+            val hashId = "img_" + digest.take(8).joinToString("") { "%02x".format(it) }
+            val url =
+                "https://firestore.googleapis.com/v1/projects/$projectId/databases/(default)/documents/habitocto_media/$hashId"
+            val fields = JSONObject().apply {
+                put("dataUri", JSONObject().put("stringValue", "data:image/jpeg;base64,$base64Jpeg"))
+                put("bytes", JSONObject().put("integerValue", jpegBytes.size.toString()))
+                put("updatedAt", JSONObject().put("integerValue", System.currentTimeMillis().toString()))
+            }
+            val payload = JSONObject().put("fields", fields).toString()
+            val req = Request.Builder()
+                .url(url)
+                .patch(payload.toRequestBody("application/json; charset=utf-8".toMediaType()))
+                .build()
+            cdnHttpClient.newCall(req).execute().use { it.isSuccessful }
+        }.getOrDefault(false)
     }
 }

@@ -45,6 +45,7 @@ import androidx.compose.material.icons.filled.PersonAdd
 import androidx.compose.material.icons.filled.Pets
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.SportsEsports
 import androidx.compose.material.icons.filled.Tag
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -79,6 +80,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -94,6 +96,7 @@ import com.example.model.PetStatus
 import com.example.model.PetType
 import com.example.model.RankingPeriod
 import com.example.model.RankingUser
+import com.example.ui.components.HabitImage
 import com.example.ui.theme.PrimaryTeal
 import com.example.ui.theme.SecondaryTeal
 import com.example.ui.theme.TextDark
@@ -109,11 +112,13 @@ import com.example.ui.theme.isAppInDarkTheme
 fun PetAndRankingScreen(
     currentStreak: Int,
     totalCompleted: Int,
-    userName: String = "Suchini",
-    userFriendCode: String = "777",
+    userName: String = "Usuario",
+    userFriendCode: String = "100",
     completedToday: Int = 0,
     scheduledToday: Int = 1,
     initialCustomization: PetCustomization = PetCustomization(),
+    petHappinessBonus: Int = 0,
+    onBoostPetHappiness: (Int) -> Unit = {},
     externalFriends: List<RankingUser> = emptyList(),
     onUpdateCustomization: (PetCustomization) -> Unit = {},
     onAddFriendByCode: (code: String, name: String?, streak: Int?, habits: Int?) -> Unit = { _, _, _, _ -> },
@@ -127,6 +132,7 @@ fun PetAndRankingScreen(
 
     var selectedSection by rememberSaveable { mutableIntStateOf(0) }
     var internalShowSanctuary by rememberSaveable { mutableStateOf(false) }
+    var showMiniGameModal by remember { mutableStateOf(false) }
     val isDark = isAppInDarkTheme
 
     // Estado de personalización sincronizado con el usuario
@@ -165,6 +171,8 @@ fun PetAndRankingScreen(
             scheduledToday = scheduledToday,
             friendsCount = maxOf(syncedFriends.size, externalFriends.size),
             initialCustomization = petCustomization,
+            petHappinessBonus = petHappinessBonus,
+            onBoostPetHappiness = onBoostPetHappiness,
             onCustomizationChanged = { updated ->
                 petCustomization = updated
                 onUpdateCustomization(updated)
@@ -179,9 +187,10 @@ fun PetAndRankingScreen(
     val xpInLevel = (totalCompleted % 10) * 10
 
     // Reglas claras de Felicidad y Energía:
-    // - Felicidad: 50% base + 10% por día consecutivo de racha (baja a 40% si la racha está en 0).
+    // - Felicidad: 50% base + 10% por día consecutivo de racha (baja a 40% si la racha está en 0) + minijuego/cuidados.
     // - Energía: basada en el progreso del día (completedToday / scheduledToday) + racha activa.
-    val happiness = if (currentStreak > 0) minOf(100, 50 + currentStreak * 10) else 40
+    val baseHappiness = if (currentStreak > 0) minOf(100, 50 + currentStreak * 10) else 40
+    val happiness = minOf(100, baseHappiness + petHappinessBonus)
     val safeScheduled = maxOf(1, scheduledToday)
     val dailyBonus = ((completedToday.coerceAtMost(safeScheduled) * 35) / safeScheduled)
     val energy = if (currentStreak > 0 || completedToday > 0) {
@@ -195,7 +204,7 @@ fun PetAndRankingScreen(
     val moodTitle = when {
         currentStreak >= 7 -> "¡Modo Leyenda Activo! 👑"
         currentStreak >= 3 -> "¡$petDisplayName está radiante! 🔥"
-        currentStreak >= 1 -> "¡$petDisplayName está muy contento! ✨"
+        currentStreak >= 1 || petHappinessBonus > 0 -> "¡$petDisplayName está muy contento! ✨"
         else -> "$petDisplayName tiene un poco de sueño 💤"
     }
 
@@ -203,7 +212,7 @@ fun PetAndRankingScreen(
         currentStreak >= 7 -> "¡Racha colosal! Tu constancia de 7+ días ha desbloqueado las auras doradas."
         currentStreak >= 3 -> "¡3 o más días seguidos completando hábitos! La felicidad y energía están al máximo."
         currentStreak >= 1 -> "Buen trabajo hoy. Cada hábito cumplido alimenta la felicidad y fortalece la energía."
-        else -> "Completa al menos un hábito hoy o visita su Santuario para darle energía y subir su felicidad."
+        else -> "Completa al menos un hábito hoy o juega al Minijuego Pou para subir su felicidad."
     }
 
     val petStatus = remember(currentStreak, totalCompleted, petCustomization, happiness, energy) {
@@ -282,6 +291,7 @@ fun PetAndRankingScreen(
                     onUpdateCustomization(updated)
                 },
                 onShowHelp = { showHelpDialog = true },
+                onOpenMiniGame = { showMiniGameModal = true },
                 onEnterSanctuary = {
                     if (onOpenSanctuary != null) {
                         onOpenSanctuary()
@@ -323,7 +333,7 @@ fun PetAndRankingScreen(
                         color = Color(0xFFE91E63)
                     )
                     Text(
-                        text = "Sube cada día consecutivo que cumples al menos un microhábito o cuando alimentas y acaricias a tu mascota en su Santuario. Si dejas pasar un día en cero, baja a 40%.",
+                        text = "Sube cada día consecutivo que cumples al menos un microhábito o cuando alimentas, acaricias o juegas al Minijuego Pou en el Santuario (solo Felicidad, 0 XP). Si dejas pasar un día en cero, baja a 40%.",
                         fontSize = 13.sp,
                         lineHeight = 18.sp
                     )
@@ -361,6 +371,24 @@ fun PetAndRankingScreen(
             }
         )
     }
+
+    if (showMiniGameModal) {
+        PetMiniGameModal(
+            petName = petDisplayName,
+            petType = petCustomization.petType,
+            onDismiss = { showMiniGameModal = false },
+            onGameFinished = { earnedHappiness ->
+                if (earnedHappiness > 0) {
+                    onBoostPetHappiness(earnedHappiness)
+                    Toast.makeText(
+                        context,
+                        "¡$petDisplayName ganó +$earnedHappiness% felicidad (0 XP)!",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }
+            }
+        )
+    }
 }
 
 /**
@@ -376,6 +404,7 @@ fun PetDetailsView(
     friendsCount: Int = 4,
     onUpdateCustomization: (PetCustomization) -> Unit,
     onShowHelp: () -> Unit,
+    onOpenMiniGame: () -> Unit = {},
     onEnterSanctuary: () -> Unit = {}
 ) {
     var activeCustomTab by rememberSaveable { mutableIntStateOf(0) } // 0: Animal, 1: Accesorio, 2: Hábitat
@@ -536,6 +565,33 @@ fun PetDetailsView(
                             Text(
                                 text = "Entrar al Espacio Propio de ${petStatus.name}",
                                 fontWeight = FontWeight.ExtraBold,
+                                fontSize = 13.sp
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        OutlinedButton(
+                            onClick = onOpenMiniGame,
+                            colors = ButtonDefaults.outlinedButtonColors(
+                                contentColor = Color.White
+                            ),
+                            border = androidx.compose.foundation.BorderStroke(
+                                1.dp,
+                                Color.White.copy(alpha = 0.55f)
+                            ),
+                            shape = RoundedCornerShape(14.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.SportsEsports,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "Minijuego Pou (+Felicidad • 0 XP)",
+                                fontWeight = FontWeight.Bold,
                                 fontSize = 13.sp
                             )
                         }
@@ -1449,16 +1505,28 @@ fun PodiumPillar(user: RankingUser, position: Int, height: Int, color: Color, is
         Box(
             modifier = Modifier
                 .size(if (position == 1) 56.dp else 46.dp)
+                .clip(CircleShape)
                 .background(color.copy(alpha = 0.25f), CircleShape)
                 .border(2.dp, color, CircleShape),
             contentAlignment = Alignment.Center
         ) {
-            Text(
-                text = user.name.firstOrNull()?.toString() ?: "?",
-                fontWeight = FontWeight.Bold,
-                fontSize = if (position == 1) 22.sp else 18.sp,
-                color = if (isDark) TextLight else TextDark
-            )
+            if (!user.avatarUrl.isNullOrBlank()) {
+                HabitImage(
+                    model = user.avatarUrl,
+                    contentDescription = user.name,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .clip(CircleShape)
+                )
+            } else {
+                Text(
+                    text = user.name.firstOrNull()?.toString() ?: "?",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = if (position == 1) 22.sp else 18.sp,
+                    color = if (isDark) TextLight else TextDark
+                )
+            }
         }
 
         Spacer(modifier = Modifier.height(6.dp))
@@ -1542,14 +1610,26 @@ fun RankingItemRow(friend: RankingUser, isDark: Boolean) {
             Box(
                 modifier = Modifier
                     .size(40.dp)
+                    .clip(CircleShape)
                     .background(PrimaryTeal.copy(alpha = 0.15f), CircleShape),
                 contentAlignment = Alignment.Center
             ) {
-                Text(
-                    text = friend.name.firstOrNull()?.toString() ?: "U",
-                    fontWeight = FontWeight.Bold,
-                    color = PrimaryTeal
-                )
+                if (!friend.avatarUrl.isNullOrBlank()) {
+                    HabitImage(
+                        model = friend.avatarUrl,
+                        contentDescription = friend.name,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .clip(CircleShape)
+                    )
+                } else {
+                    Text(
+                        text = friend.name.firstOrNull()?.toString() ?: "U",
+                        fontWeight = FontWeight.Bold,
+                        color = PrimaryTeal
+                    )
+                }
             }
 
             Spacer(modifier = Modifier.width(12.dp))

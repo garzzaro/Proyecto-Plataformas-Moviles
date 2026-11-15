@@ -36,9 +36,15 @@ import androidx.compose.foundation.layout.fillMaxWidth
 
 import androidx.compose.foundation.layout.height
 
+import androidx.compose.foundation.layout.WindowInsets
+
+import androidx.compose.foundation.layout.navigationBarsPadding
+
 import androidx.compose.foundation.layout.offset
 
 import androidx.compose.foundation.layout.padding
+
+import androidx.compose.foundation.layout.safeDrawing
 
 import androidx.compose.foundation.layout.size
 
@@ -197,6 +203,8 @@ import com.example.ui.AchievementsShowcaseCard
 import com.example.ui.AddHabitScreen
 
 import com.example.ui.AuthModalDialog
+
+import com.example.ui.AuthScreen
 
 import com.example.ui.FeedScreen
 
@@ -497,67 +505,29 @@ fun HabitOctoMainApp(
 
 
 
-    // Sincronización automática con CloudSyncManager cuando cambian uiState.user o uiState.summary
+    // Sincronización automática con CloudSyncManager únicamente cuando existe sesión autenticada
 
-    LaunchedEffect(uiState.user, uiState.summary.totalCompleted, uiState.summary.microStreak) {
+    LaunchedEffect(uiState.user, activeSession, uiState.summary.totalCompleted, uiState.summary.overallStreak, uiState.summary.microStreak) {
+
+        val session = activeSession ?: return@LaunchedEffect
+
+        if (!session.isLoggedIn) return@LaunchedEffect
 
         val currentUser = uiState.user ?: return@LaunchedEffect
 
         val customization = PetCustomization.fromUser(currentUser)
 
-        val sessionTag = syncManager.currentSession.value?.normalizedTag
+        syncManager.publishCurrentUserStats(
 
-        val userTag = currentUser.friendCode.takeIf { it.isNotBlank() && it != "000" }
+            completedHabits = uiState.summary.totalCompleted,
 
-        val resolvedTag = userTag
+            currentStreak = maxOf(uiState.summary.overallStreak, uiState.summary.microStreak),
 
-            ?: sessionTag
+            petCustomization = customization,
 
-            ?: CloudSyncManager.generateDeterministicTag(currentUser.displayName, currentUser.email.orEmpty())
+            userNameOverride = session.displayName.ifBlank { currentUser.displayName }
 
-
-
-        val currentSyncSession = syncManager.currentSession.value
-
-        if (currentSyncSession == null ||
-
-            currentSyncSession.normalizedTag != resolvedTag ||
-
-            currentSyncSession.displayName != currentUser.displayName
-
-        ) {
-
-            syncManager.loginOrRegister(
-
-                name = currentUser.displayName,
-
-                email = currentUser.email.orEmpty(),
-
-                preferredTag = resolvedTag,
-
-                completedHabits = uiState.summary.totalCompleted,
-
-                currentStreak = uiState.summary.microStreak,
-
-                petCustomization = customization
-
-            )
-
-        } else {
-
-            syncManager.publishCurrentUserStats(
-
-                completedHabits = uiState.summary.totalCompleted,
-
-                currentStreak = uiState.summary.microStreak,
-
-                petCustomization = customization,
-
-                userNameOverride = currentUser.displayName
-
-            )
-
-        }
+        )
 
     }
 
@@ -601,6 +571,8 @@ fun HabitOctoMainApp(
 
 
 
+    val needsInitialAuth = activeSession == null || activeSession?.isLoggedIn != true
+
     CompositionLocalProvider(
 
         LocalAppLanguage provides appLanguage,
@@ -609,13 +581,51 @@ fun HabitOctoMainApp(
 
     ) {
 
+        if (needsInitialAuth) {
+
+            AuthScreen(
+
+                onAuthSuccess = { session ->
+
+                    viewModel.loginOrRegisterUser(
+
+                        name = session.displayName,
+
+                        email = session.email,
+
+                        friendCode = session.normalizedTag,
+
+                        avatarUrl = session.avatarUrl
+
+                    )
+
+                },
+
+                completedHabits = uiState.summary.totalCompleted,
+
+                currentStreak = maxOf(uiState.summary.overallStreak, uiState.summary.microStreak),
+
+                isEnglish = isEnglish,
+
+                allowRegistration = true,
+
+                modifier = Modifier.fillMaxSize()
+
+            )
+
+        } else {
+
         Scaffold(
 
             containerColor = MaterialTheme.colorScheme.background,
 
+            contentWindowInsets = WindowInsets.safeDrawing,
+
             bottomBar = {
 
                 NavigationBar(
+
+                    modifier = Modifier.navigationBarsPadding(),
 
                     containerColor = MaterialTheme.colorScheme.background,
 
@@ -933,7 +943,9 @@ fun HabitOctoMainApp(
 
                                 isEnglish = isEnglish,
 
-                                requirePhotoForMicroHabits = true
+                                requirePhotoForMicroHabits = true,
+
+                                smartCoachTip = uiState.smartCoachTip
 
                             )
 
@@ -1047,23 +1059,27 @@ fun HabitOctoMainApp(
 
                                 PetAndRankingScreen(
 
-                                    currentStreak = uiState.summary.microStreak,
+                                    currentStreak = maxOf(uiState.summary.overallStreak, uiState.summary.microStreak),
 
                                     totalCompleted = uiState.summary.totalCompleted,
 
-                                    userName = uiState.user?.displayName ?: "Suchini",
+                                    userName = activeSession?.displayName ?: uiState.user?.displayName ?: "Usuario",
 
-                                    userFriendCode = uiState.user?.friendCode?.takeIf { it.isNotBlank() && it != "000" }
+                                    userFriendCode = activeSession?.normalizedTag
 
-                                        ?: activeSession?.normalizedTag
+                                        ?: uiState.user?.friendCode?.takeIf { it.isNotBlank() && it != "000" }
 
-                                        ?: "777",
+                                        ?: "100",
 
                                     completedToday = uiState.summary.completedToday,
 
                                     scheduledToday = maxOf(1, uiState.summary.scheduledToday),
 
                                     initialCustomization = PetCustomization.fromUser(uiState.user),
+
+                                    petHappinessBonus = uiState.petHappinessBonus,
+
+                                    onBoostPetHappiness = viewModel::boostPetHappinessFromMiniGame,
 
                                     externalFriends = roomRankingFriends,
 
@@ -1111,6 +1127,8 @@ fun HabitOctoMainApp(
 
                                 uiState.summary.totalCompleted,
 
+                                uiState.summary.overallStreak,
+
                                 uiState.summary.microStreak,
 
                                 uiState.friends.size
@@ -1121,7 +1139,7 @@ fun HabitOctoMainApp(
 
                                     totalCompleted = uiState.summary.totalCompleted,
 
-                                    currentStreak = uiState.summary.microStreak,
+                                    currentStreak = maxOf(uiState.summary.overallStreak, uiState.summary.microStreak),
 
                                     friendsCount = maxOf(1, uiState.friends.size),
 
@@ -1185,13 +1203,13 @@ fun HabitOctoMainApp(
 
                                     ProfileCloudTagCard(
 
-                                        userName = uiState.user?.displayName ?: "Suchini",
+                                        userName = activeSession?.displayName ?: uiState.user?.displayName ?: "Usuario",
 
-                                        userEmail = uiState.user?.email,
+                                        userEmail = activeSession?.email?.ifBlank { null } ?: uiState.user?.email,
 
                                         completedHabits = uiState.summary.totalCompleted,
 
-                                        currentStreak = uiState.summary.microStreak,
+                                        currentStreak = maxOf(uiState.summary.overallStreak, uiState.summary.microStreak),
 
                                         onOpenAuthModal = { showAuthModal = true }
 
@@ -1547,7 +1565,7 @@ fun HabitOctoMainApp(
 
 
 
-        // Modal de Inicio de Sesión / Registro / Personalización de #Código de 3 dígitos
+        // Modal de Cambio de Usuario (sin creación de cuentas dentro de la app; exige contraseña)
 
         if (showAuthModal) {
 
@@ -1563,7 +1581,9 @@ fun HabitOctoMainApp(
 
                         email = session.email,
 
-                        friendCode = session.normalizedTag
+                        friendCode = session.normalizedTag,
+
+                        avatarUrl = session.avatarUrl
 
                     ) {
 
@@ -1579,9 +1599,11 @@ fun HabitOctoMainApp(
 
                 initialTag = uiState.user?.friendCode?.takeIf { it != "000" }.orEmpty(),
 
+                allowRegistration = false,
+
                 completedHabits = uiState.summary.totalCompleted,
 
-                currentStreak = uiState.summary.microStreak
+                currentStreak = maxOf(uiState.summary.overallStreak, uiState.summary.microStreak)
 
             )
 
@@ -1622,6 +1644,8 @@ fun HabitOctoMainApp(
                 }
 
             )
+
+        }
 
         }
 
@@ -2325,7 +2349,7 @@ fun ProfileHeaderSection(
 
     val strings = AppStrings.current()
 
-    val friendTag = user?.friendCode?.takeIf { it.isNotBlank() && it != "000" } ?: "777"
+    val friendTag = user?.friendCode?.takeIf { it.isNotBlank() && it != "000" } ?: "100"
 
     Column(
 
@@ -2821,7 +2845,7 @@ fun PersonalStatsSection(summary: TrackingSummary = TrackingSummary()) {
 
                     Text(
 
-                        text = strings.formatDaysCount(summary.microStreak),
+                        text = strings.formatDaysCount(maxOf(summary.overallStreak, summary.microStreak)),
 
                         style = MaterialTheme.typography.headlineMedium,
 
@@ -2835,7 +2859,7 @@ fun PersonalStatsSection(summary: TrackingSummary = TrackingSummary()) {
 
                     Text(
 
-                        text = strings.formatBestStreak(summary.bestMicroStreak),
+                        text = strings.formatBestStreak(maxOf(summary.bestOverallStreak, summary.bestMicroStreak)),
 
                         style = MaterialTheme.typography.bodySmall,
 
@@ -2947,7 +2971,7 @@ fun AccountDataSection(
 
     val textGray = if (isDark) TextGrayDark else TextGrayLight
 
-    val friendTag = user?.friendCode?.takeIf { it.isNotBlank() && it != "000" } ?: "777"
+    val friendTag = user?.friendCode?.takeIf { it.isNotBlank() && it != "000" } ?: "100"
 
 
 

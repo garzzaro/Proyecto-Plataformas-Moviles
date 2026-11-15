@@ -61,6 +61,9 @@ import com.example.ui.theme.TextGrayLight
 import com.example.ui.theme.TextLight
 import com.example.ui.theme.isAppInDarkTheme
 
+/** Origen de la notificación: Sistema, Hábito o Mascota. */
+enum class NotificationSender { SYSTEM, HABIT, PET }
+
 /**
  * Representa una notificación inteligente dentro del Centro de Notificaciones de HabitOcto.
  */
@@ -71,7 +74,8 @@ data class AppNotificationItem(
     val timeLabel: String,
     val iconEmoji: String,
     val targetTab: Int,
-    val isUnread: Boolean = true
+    val isUnread: Boolean = true,
+    val sender: NotificationSender = NotificationSender.SYSTEM
 )
 
 /**
@@ -99,19 +103,20 @@ object NotificationGenerator {
             list += AppNotificationItem(
                 id = "notif_micro_pending",
                 title = if (isEnglish) {
-                    "${pendingMicro.size} micro-habit(s) pending today"
+                    "🎯 Habit: ${pendingMicro.size} micro-habit(s) pending"
                 } else {
-                    "Tienes ${pendingMicro.size} micro-hábito(s) pendiente(s) hoy"
+                    "🎯 Hábito: ${pendingMicro.size} micro-hábito(s) pendiente(s)"
                 },
                 message = if (isEnglish) {
-                    "Next up: \"$sampleTitle\". Complete your 2-min micro-habits to protect your daily streak!"
+                    "Next up: \"$sampleTitle\". Take a proof photo and validate your steps to protect your streak!"
                 } else {
-                    "Siguiente: \"$sampleTitle\". ¡Completa tus micro-hábitos de 2 min para impulsar tu racha hoy!"
+                    "Siguiente: \"$sampleTitle\". ¡Toma foto de evidencia y valida tus pasos para subir tu racha!"
                 },
-                timeLabel = if (isEnglish) "Now • Tracker" else "Ahora • Tracker",
+                timeLabel = if (isEnglish) "Habit • Tracker" else "Hábito • Tracker",
                 iconEmoji = "⚡",
                 targetTab = 0,
-                isUnread = true
+                isUnread = true,
+                sender = NotificationSender.HABIT
             )
         } else {
             val completedCount = summary.completedToday
@@ -119,100 +124,104 @@ object NotificationGenerator {
             list += AppNotificationItem(
                 id = "notif_micro_done",
                 title = if (isEnglish) {
-                    "Micro-habits up to date ($completedCount/$scheduledCount today)"
+                    "🎯 Habit: Daily goal ($completedCount/$scheduledCount)"
                 } else {
-                    "Micro-hábitos al día ($completedCount/$scheduledCount hoy)"
+                    "🎯 Hábito: Meta al día ($completedCount/$scheduledCount)"
                 },
                 message = if (pendingAll.isNotEmpty()) {
                     if (isEnglish) {
-                        "Great job on micro-habits! You still have ${pendingAll.size} main goal(s) left today."
+                        "Great job on micro-habits! You still have ${pendingAll.size} active habit(s) left."
                     } else {
-                        "¡Excelente con tus micro-hábitos! Aún tienes ${pendingAll.size} hábito(s) por completar hoy."
+                        "¡Excelente con tus micro-hábitos! Aún tienes ${pendingAll.size} hábito(s) activo(s) por completar."
                     }
                 } else {
                     if (isEnglish) {
-                        "100% of today's habits completed! Octo is celebrating your discipline."
+                        "100% of active habits completed! All your pending tasks are cleared."
                     } else {
-                        "¡100% de tus hábitos de hoy completados! Octo está celebrando tu constancia."
+                        "¡100% de tus hábitos completados! Ya limpiaste todos tus pendientes de hoy."
                     }
                 },
-                timeLabel = if (isEnglish) "Today • Tracker" else "Hoy • Tracker",
+                timeLabel = if (isEnglish) "Habit • Tracker" else "Hábito • Tracker",
                 iconEmoji = "✅",
                 targetTab = 0,
-                isUnread = pendingAll.isNotEmpty()
+                isUnread = pendingAll.isNotEmpty(),
+                sender = NotificationSender.HABIT
             )
         }
 
-        // 2. Estado de Racha y Mascota (targetTab = 2 -> Mascota)
-        val streakDays = summary.microStreak
+        // 2. Mascota: Racha, XP real por hábitos y Minijuego tipo Pou (targetTab = 2 -> Mascota)
+        val streakDays = maxOf(summary.overallStreak, summary.microStreak)
         val petEnergy = (45 + summary.todayPercent / 2 + minOf(20, streakDays * 4)).coerceIn(30, 100)
         val petMoodTextEs = when {
-            petEnergy >= 85 -> "radiante y con energía al $petEnergy%"
-            petEnergy >= 60 -> "feliz con $petEnergy% de energía"
-            else -> "esperando que completes un hábito ($petEnergy% energía)"
+            petEnergy >= 85 -> "súper motivada ($petEnergy% energía)"
+            petEnergy >= 60 -> "animada con $petEnergy% de energía"
+            else -> "esperando que completes un hábito para ganar XP ($petEnergy%)"
         }
         val petMoodTextEn = when {
-            petEnergy >= 85 -> "radiant at $petEnergy% energy"
+            petEnergy >= 85 -> "super motivated ($petEnergy% energy)"
             petEnergy >= 60 -> "happy with $petEnergy% energy"
-            else -> "waiting for a habit completion ($petEnergy% energy)"
+            else -> "waiting for a habit completion to earn XP ($petEnergy%)"
         }
 
         list += AppNotificationItem(
             id = "notif_streak_pet",
             title = if (isEnglish) {
-                "Current Streak: $streakDays day(s) 🔥 • Pet Sanctuary"
+                "🐙 Pet: Streak $streakDays day(s) & Sanctuary"
             } else {
-                "Racha actual: $streakDays día(s) 🔥 • Santuario de Mascota"
+                "🐙 Mascota: Racha de $streakDays día(s) y Juego"
             },
             message = if (isEnglish) {
-                "Your companion is $petMoodTextEn. Tap to visit the Sanctuary and check your level rewards!"
+                "I'm $petMoodTextEn. Remember: XP only rises by completing habits, and happiness rises in the Pou mini-game!"
             } else {
-                "Tu mascota está $petMoodTextEs. ¡Toca para visitar el Santuario y ver sus recompensas!"
+                "Estoy $petMoodTextEs. Recuerda: ¡subo de XP solo con tus hábitos y de felicidad con el minijuego tipo Pou!"
             },
-            timeLabel = if (isEnglish) "Live • Pet" else "En vivo • Mascota",
+            timeLabel = if (isEnglish) "Pet • Sanctuary" else "Mascota • Santuario",
             iconEmoji = "🐙",
             targetTab = 2,
-            isUnread = true
+            isUnread = true,
+            sender = NotificationSender.PET
         )
 
-        // 3. Modo Enfoque con bloqueo disponible en el Tracker (targetTab = 0 -> Tracker)
+        // 3. Sistema: Seguridad del Modo Enfoque estricto (targetTab = 0 -> Tracker)
         list += AppNotificationItem(
             id = "notif_focus_mode",
             title = if (isEnglish) {
-                "Focus Mode with Distraction Lock available"
+                "⚙️ System: Strict Focus Lock Ready"
             } else {
-                "Modo Enfoque con bloqueo disponible"
+                "⚙️ Sistema: Modo Enfoque Estricto activo"
             },
             message = if (isEnglish) {
-                "Start a timed Focus Session in the Tracker with in-app distraction lock to finish your habits faster."
+                "Screen Pinning + anti-exit lock keeps other apps blocked until you finish or verify with a photo."
             } else {
-                "Activa el temporizador de Modo Enfoque con bloqueo en el Tracker para concentrarte sin distracciones."
+                "El anclaje de pantalla y escudo anti-salida bloquean otras apps hasta que termines o valides con foto."
             },
-            timeLabel = if (isEnglish) "Tip • Tracker" else "Consejo • Tracker",
-            iconEmoji = "🎯",
+            timeLabel = if (isEnglish) "System • Security" else "Sistema • Seguridad",
+            iconEmoji = "🛡️",
             targetTab = 0,
-            isUnread = true
+            isUnread = true,
+            sender = NotificationSender.SYSTEM
         )
 
-        // 4. Feed de 7 días y Ranking #Amigos (targetTab = 1 -> Feed o 2 -> Ranking)
+        // 4. Sistema / Comunidad: Feed Compartido entre Amigos (targetTab = 1 -> Feed)
         val safePosts = maxOf(0, postsCount)
         val safeFriends = maxOf(1, friendsCount)
         list += AppNotificationItem(
             id = "notif_feed_7days",
             title = if (isEnglish) {
-                "Community Feed ($safePosts active posts • 7-day window)"
+                "⚙️ System: Shared Friends Feed ($safePosts posts)"
             } else {
-                "Feed Social ($safePosts publicaciones activas • máx. 7 días)"
+                "⚙️ Sistema: Feed Compartido ($safePosts publicaciones)"
             },
             message = if (isEnglish) {
-                "Posts stay active for up to 7 days and you have $safeFriends friend(s) in the #Friends Ranking. Share an optimized photo!"
+                "Cloud sync active across $safeFriends friend(s) with unique system #Tag and cloud avatars."
             } else {
-                "Las publicaciones duran máximo 7 días y tienes $safeFriends amigo(s) en el Ranking #Amigos. ¡Comparte tu logro con foto optimizada!"
+                "Sincronización activa entre $safeFriends amigo(s) con #Tag único del sistema y fotos de perfil en la nube."
             },
-            timeLabel = if (isEnglish) "7d Feed • Social" else "Feed 7d • Comunidad",
-            iconEmoji = "📸",
+            timeLabel = if (isEnglish) "System • Cloud Feed" else "Sistema • Nube Social",
+            iconEmoji = "☁️",
             targetTab = 1,
-            isUnread = true
+            isUnread = true,
+            sender = NotificationSender.SYSTEM
         )
 
         return list
@@ -535,12 +544,44 @@ private fun NotificationCardItem(
                     color = if (isDark) LightTealAccent.copy(alpha = 0.9f) else Color(0xFF334155)
                 )
 
-                Text(
-                    text = item.timeLabel,
-                    fontSize = 10.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = PrimaryTeal
-                )
+                val badgeBg = when (item.sender) {
+                    NotificationSender.SYSTEM -> Color(0xFF0284C7).copy(alpha = 0.16f)
+                    NotificationSender.HABIT -> Color(0xFF0F766E).copy(alpha = 0.16f)
+                    NotificationSender.PET -> Color(0xFF9333EA).copy(alpha = 0.16f)
+                }
+                val badgeText = when (item.sender) {
+                    NotificationSender.SYSTEM -> "⚙️ Sistema"
+                    NotificationSender.HABIT -> "🎯 Hábito"
+                    NotificationSender.PET -> "🐙 Mascota"
+                }
+                val badgeFg = when (item.sender) {
+                    NotificationSender.SYSTEM -> if (isDark) Color(0xFF7DD3FC) else Color(0xFF0369A1)
+                    NotificationSender.HABIT -> if (isDark) Color(0xFF5EEAD4) else Color(0xFF0F766E)
+                    NotificationSender.PET -> if (isDark) Color(0xFFD8B4FE) else Color(0xFF7E22CE)
+                }
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Surface(
+                        color = badgeBg,
+                        shape = RoundedCornerShape(6.dp)
+                    ) {
+                        Text(
+                            text = badgeText,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = badgeFg,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                        )
+                    }
+                    Text(
+                        text = item.timeLabel,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = PrimaryTeal
+                    )
+                }
             }
 
             Icon(

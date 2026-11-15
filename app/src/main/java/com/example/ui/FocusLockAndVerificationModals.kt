@@ -14,6 +14,11 @@ import androidx.activity.result.contract.ActivityResultContracts
 import android.Manifest
 import android.content.pm.PackageManager
 import androidx.core.content.ContextCompat
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.animation.AnimatedVisibility
@@ -92,8 +97,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.LifecycleEventObserver
 import com.example.model.HabitItem
 import com.example.model.PhotoVerificationAnalyzer
 import com.example.model.PhotoVerificationResult
@@ -454,23 +457,33 @@ fun FocusLockScreenOverlay(
     var remainingSeconds by rememberSaveable(durationMinutes) { mutableIntStateOf(totalSeconds) }
     var verificationResult by remember { mutableStateOf<PhotoVerificationResult?>(null) }
     var showPhotoUnlockOptions by rememberSaveable { mutableStateOf(false) }
+    var escapeAttempts by rememberSaveable { mutableIntStateOf(0) }
+    var externalProofInFlight by remember { mutableStateOf(false) }
 
     // Bloqueo estricto del botón Back del sistema
     BackHandler(enabled = true) {
+        escapeAttempts += 1
         val warn = if (isEnglish) {
-            "🔒 Focus Mode is active. Finish the timer or verify with a photo to unlock."
+            "🔒 Focus Mode locked ($escapeAttempts). Finish the timer or verify with a photo."
         } else {
-            "🔒 Modo Enfoque activo. Termina el tiempo o sube una foto de prueba para desbloquear."
+            "🔒 Bloqueo estricto activo (intento $escapeAttempts). Termina el tiempo o valida con foto."
         }
         Toast.makeText(context, warn, Toast.LENGTH_SHORT).show()
     }
 
-    // Configuración de ventana y persistencia al apagar/encender pantalla (sin bloquear el SO ni congelar la tablet)
+    // Anclaje de pantalla real (Screen Pinning / LockTask) + pantalla inmersiva + escudo anti-salida al minimizar
     DisposableEffect(lifecycleOwner, context) {
         val activity = findActivity(context)
         val window = activity?.window
 
         window?.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        if (window != null) {
+            runCatching {
+                val controller = WindowCompat.getInsetsController(window, window.decorView)
+                controller.hide(WindowInsetsCompat.Type.systemBars())
+                controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            }
+        }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
             activity?.setShowWhenLocked(true)
             activity?.setTurnScreenOn(true)
@@ -481,8 +494,52 @@ fun FocusLockScreenOverlay(
                     WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON
             )
         }
+        runCatching { activity?.startLockTask() }
+
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_STOP -> {
+                    if (!externalProofInFlight) {
+                        escapeAttempts += 1
+                        if (activity != null) {
+                            runCatching {
+                                val reenter = Intent(context, activity::class.java).apply {
+                                    addFlags(
+                                        Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or
+                                            Intent.FLAG_ACTIVITY_SINGLE_TOP
+                                    )
+                                }
+                                context.startActivity(reenter)
+                            }
+                        }
+                    }
+                }
+                Lifecycle.Event.ON_RESUME -> {
+                    externalProofInFlight = false
+                    if (window != null) {
+                        runCatching {
+                            val controller = WindowCompat.getInsetsController(window, window.decorView)
+                            controller.hide(WindowInsetsCompat.Type.systemBars())
+                            controller.systemBarsBehavior =
+                                WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                        }
+                    }
+                    runCatching { activity?.startLockTask() }
+                }
+                else -> Unit
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
 
         onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+            runCatching { activity?.stopLockTask() }
+            if (window != null) {
+                runCatching {
+                    WindowCompat.getInsetsController(window, window.decorView)
+                        .show(WindowInsetsCompat.Type.systemBars())
+                }
+            }
             window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
                 activity?.setShowWhenLocked(false)
@@ -508,10 +565,11 @@ fun FocusLockScreenOverlay(
         }
     }
 
-    // Launchers de Cámara y Galería para desbloqueo por prueba fotográfica en RAM con solicitud segura de permisos
+    // Launchers de Cámara y Galería para desbloqueo por prueba fotográfica en RAM (pausan brevemente LockTask)
     val cameraLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.TakePicturePreview()
     ) { bitmap ->
+        externalProofInFlight = false
         if (bitmap != null) {
             val result = PhotoVerificationAnalyzer.analyzeBitmapAndDiscard(
                 bitmap = bitmap,
@@ -528,25 +586,34 @@ fun FocusLockScreenOverlay(
         contract = ActivityResultContracts.RequestPermission()
     ) { isGranted ->
         if (isGranted) {
+            val activity = findActivity(context)
+            externalProofInFlight = true
+            runCatching { activity?.stopLockTask() }
             runCatching { cameraLauncher.launch(null) }
                 .onFailure {
+                    externalProofInFlight = false
                     Toast.makeText(context, if (isEnglish) "Could not open camera" else "No se pudo abrir la cámara", Toast.LENGTH_SHORT).show()
                 }
         } else {
+            externalProofInFlight = false
             val msg = if (isEnglish) "Camera permission is required to take photo proof" else "Se requiere permiso de cámara para tomar la foto de prueba"
             Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
         }
     }
 
     val launchCameraSafe: () -> Unit = {
+        val activity = findActivity(context)
         val hasCamPermission = ContextCompat.checkSelfPermission(
             context,
             Manifest.permission.CAMERA
         ) == PackageManager.PERMISSION_GRANTED
 
+        externalProofInFlight = true
+        runCatching { activity?.stopLockTask() }
         if (hasCamPermission) {
             runCatching { cameraLauncher.launch(null) }
                 .onFailure {
+                    externalProofInFlight = false
                     Toast.makeText(context, if (isEnglish) "Could not open camera" else "No se pudo abrir la cámara", Toast.LENGTH_SHORT).show()
                 }
         } else {
@@ -557,6 +624,7 @@ fun FocusLockScreenOverlay(
     val galleryLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri ->
+        externalProofInFlight = false
         if (uri != null) {
             val result = PhotoVerificationAnalyzer.analyzeUriAndDiscard(
                 context = context,
@@ -820,7 +888,13 @@ fun FocusLockScreenOverlay(
                                     }
 
                                     OutlinedButton(
-                                        onClick = { runCatching { galleryLauncher.launch("image/*") } },
+                                        onClick = {
+                                            val activity = findActivity(context)
+                                            externalProofInFlight = true
+                                            runCatching { activity?.stopLockTask() }
+                                            runCatching { galleryLauncher.launch("image/*") }
+                                                .onFailure { externalProofInFlight = false }
+                                        },
                                         modifier = Modifier.weight(1f),
                                         shape = RoundedCornerShape(12.dp)
                                     ) {
@@ -844,13 +918,20 @@ fun FocusLockScreenOverlay(
                     }
 
                     Text(
-                        text = if (isEnglish) {
-                            "🛡️ Zero-Storage RAM Verification • Screen stays locked to HabitOcto"
+                        text = if (escapeAttempts > 0) {
+                            if (isEnglish) {
+                                "⚠️ Exit attempts blocked: $escapeAttempts • Screen Pinning stays enforced"
+                            } else {
+                                "⚠️ Intentos de salida bloqueados: $escapeAttempts • Anclaje estricto activo"
+                            }
+                        } else if (isEnglish) {
+                            "🛡️ Zero-Storage RAM Verification • Screen Pinning locks other apps"
                         } else {
-                            "🛡️ Verificación en RAM (0 Bytes en BD) • Pantalla fijada en HabitOcto"
+                            "🛡️ Anclaje estricto (LockTask) activo • Otras apps restringidas"
                         },
-                        color = Color(0xFF64748B),
+                        color = if (escapeAttempts > 0) Color(0xFFFCA5A5) else Color(0xFF94A3B8),
                         fontSize = 11.sp,
+                        fontWeight = if (escapeAttempts > 0) FontWeight.Bold else FontWeight.Medium,
                         textAlign = TextAlign.Center
                     )
                 }
@@ -878,10 +959,13 @@ fun MicroHabitPhotoVerificationDialog(
     habit: HabitItem,
     isEnglish: Boolean = false,
     onDismiss: () -> Unit,
-    onVerifiedComplete: (HabitItem) -> Unit
+    onVerifiedComplete: (HabitItem) -> Unit,
+    onVerifiedWithSteps: ((HabitItem, Int) -> Unit)? = null
 ) {
     val context = LocalContext.current
     var verificationResult by remember { mutableStateOf<PhotoVerificationResult?>(null) }
+    val remainingSteps = maxOf(1, habit.maxProgress - habit.currentProgress)
+    var stepsToAdd by rememberSaveable(habit.id) { mutableIntStateOf(1) }
 
     val cameraLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.TakePicturePreview()
@@ -889,7 +973,8 @@ fun MicroHabitPhotoVerificationDialog(
         if (bitmap != null) {
             verificationResult = PhotoVerificationAnalyzer.analyzeBitmapAndDiscard(
                 bitmap = bitmap,
-                habitTitle = habit.title
+                habitTitle = habit.title,
+                checkDuplicate = true
             )
         }
     }
@@ -1068,20 +1153,137 @@ fun MicroHabitPhotoVerificationDialog(
                             }
                         }
                     }
+
+                    // Validación interactiva de pasos / unidades después de aprobar la fotografía
+                    if (result.isValid && (habit.isProgressive || habit.maxProgress > 1 || habit.isMicroHabit)) {
+                        val unitLabel = habit.progressUnit.ifBlank { if (isEnglish) "steps" else "pasos" }
+                        val previewTotal = (habit.currentProgress + stepsToAdd).coerceAtMost(maxOf(1, habit.maxProgress))
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(14.dp),
+                            colors = CardDefaults.cardColors(containerColor = PrimaryTeal.copy(alpha = 0.08f))
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(12.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Text(
+                                    text = if (isEnglish) {
+                                        "Validate steps to add ($unitLabel)"
+                                    } else {
+                                        "Valida los pasos a sumar ($unitLabel)"
+                                    },
+                                    fontWeight = FontWeight.ExtraBold,
+                                    fontSize = 13.sp,
+                                    color = PrimaryTeal
+                                )
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    OutlinedButton(
+                                        onClick = { if (stepsToAdd > 1) stepsToAdd -= 1 },
+                                        enabled = stepsToAdd > 1,
+                                        shape = RoundedCornerShape(10.dp),
+                                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
+                                    ) {
+                                        Text("-1", fontWeight = FontWeight.Bold)
+                                    }
+                                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                        Text(
+                                            text = "+$stepsToAdd $unitLabel",
+                                            fontSize = 16.sp,
+                                            fontWeight = FontWeight.ExtraBold,
+                                            color = PrimaryTeal
+                                        )
+                                        Text(
+                                            text = if (isEnglish) {
+                                                "New progress: $previewTotal / ${maxOf(1, habit.maxProgress)}"
+                                            } else {
+                                                "Nuevo avance: $previewTotal / ${maxOf(1, habit.maxProgress)}"
+                                            },
+                                            fontSize = 11.sp,
+                                            color = Color(0xFF475569)
+                                        )
+                                    }
+                                    Button(
+                                        onClick = { if (stepsToAdd < remainingSteps) stepsToAdd += 1 },
+                                        enabled = stepsToAdd < remainingSteps,
+                                        shape = RoundedCornerShape(10.dp),
+                                        colors = ButtonDefaults.buttonColors(containerColor = PrimaryTeal),
+                                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
+                                    ) {
+                                        Text("+1", fontWeight = FontWeight.Bold, color = Color.White)
+                                    }
+                                }
+                                if (remainingSteps > 1) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                    ) {
+                                        listOfNotNull(
+                                            1.takeIf { it <= remainingSteps },
+                                            2.takeIf { it <= remainingSteps },
+                                            5.takeIf { it <= remainingSteps },
+                                            remainingSteps.takeIf { it > 1 }
+                                        ).distinct().forEach { preset ->
+                                            val label = if (preset == remainingSteps) {
+                                                if (isEnglish) "All ($preset)" else "Meta ($preset)"
+                                            } else {
+                                                "+$preset"
+                                            }
+                                            Surface(
+                                                color = if (stepsToAdd == preset) PrimaryTeal else Color.Transparent,
+                                                shape = RoundedCornerShape(8.dp),
+                                                modifier = Modifier
+                                                    .weight(1f)
+                                                    .border(
+                                                        1.dp,
+                                                        PrimaryTeal.copy(alpha = 0.5f),
+                                                        RoundedCornerShape(8.dp)
+                                                    )
+                                                    .clip(RoundedCornerShape(8.dp))
+                                                    .clickable { stepsToAdd = preset }
+                                            ) {
+                                                Text(
+                                                    text = label,
+                                                    fontSize = 11.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = if (stepsToAdd == preset) Color.White else PrimaryTeal,
+                                                    textAlign = TextAlign.Center,
+                                                    modifier = Modifier.padding(vertical = 5.dp)
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             }
         },
         confirmButton = {
             Button(
-                onClick = { onVerifiedComplete(habit) },
+                onClick = {
+                    val targetProgress = (habit.currentProgress + stepsToAdd).coerceAtMost(maxOf(1, habit.maxProgress))
+                    if (onVerifiedWithSteps != null && (habit.isProgressive || habit.maxProgress > 1)) {
+                        onVerifiedWithSteps(habit, targetProgress)
+                    } else {
+                        onVerifiedComplete(habit)
+                    }
+                },
                 enabled = verificationResult?.isValid == true,
                 colors = ButtonDefaults.buttonColors(containerColor = PrimaryTeal)
             ) {
                 Text(
-                    text = if (isEnglish) {
-                        "✅ Confirm Micro-Habit Completed"
+                    text = if (habit.isProgressive || habit.maxProgress > 1) {
+                        if (isEnglish) "✅ Add +$stepsToAdd Steps" else "✅ Sumar +$stepsToAdd Pasos"
+                    } else if (isEnglish) {
+                        "✅ Confirm Habit Completed"
                     } else {
-                        "✅ Confirmar Micro-Hábito Completado"
+                        "✅ Confirmar Hábito Completado"
                     },
                     color = Color.White,
                     fontWeight = FontWeight.Bold

@@ -70,7 +70,9 @@ data class TrackingSummary(
     val microStreak: Int = 0,
     val bestMicroStreak: Int = 0,
     val activeDays: Int = 0,
-    val totalCompleted: Int = 0
+    val totalCompleted: Int = 0,
+    val overallStreak: Int = 0,
+    val bestOverallStreak: Int = 0
 ) {
     val completedWeek: Int get() = days.sumOf { it.completed }
     val scheduledWeek: Int get() = days.sumOf { it.scheduled }
@@ -152,6 +154,17 @@ object HabitTracking {
             best = maxOf(best, run)
             previous = day
         }
+
+        val allCompletedDays = records.filter { it.completed }.mapNotNull { it.completedDay }.toSet()
+        var bestAll = 0
+        var runAll = 0
+        var prevAll: Long? = null
+        allCompletedDays.sorted().forEach { day ->
+            runAll = if (prevAll == day - 1) runAll + 1 else 1
+            bestAll = maxOf(bestAll, runAll)
+            prevAll = day
+        }
+
         // Cada ocurrencia semanal cuenta una vez: al completarse o al vencer.
         // Mientras esté abierta y pendiente, se representa en la fecha de hoy.
         // El resumen semanal refleja la lista activa; los registros archivados siguen
@@ -164,10 +177,14 @@ object HabitTracking {
                 val rows = byDay[day].orEmpty()
                 DayProgress(day, rows.count { it.completed }, rows.size)
             },
-            completedToday = current.count { it.completed }, scheduledToday = current.size,
-            microStreak = streak(microDays, today), bestMicroStreak = best,
-            activeDays = records.mapNotNull { it.completedDay }.toSet().size,
-            totalCompleted = records.count { it.completed }
+            completedToday = current.count { it.completed },
+            scheduledToday = current.size,
+            microStreak = streak(microDays, today),
+            bestMicroStreak = best,
+            activeDays = allCompletedDays.size,
+            totalCompleted = records.count { it.completed },
+            overallStreak = streak(allCompletedDays, today),
+            bestOverallStreak = bestAll
         )
     }
 

@@ -625,11 +625,9 @@ fun FeedPostCard(
     var showDeleteConfirmDialog by rememberSaveable { mutableStateOf(false) }
     var showCommentsSection by rememberSaveable { mutableStateOf(false) }
     var commentDraft by rememberSaveable { mutableStateOf("") }
-    var localAddedComments by remember(post.id) { mutableStateOf<List<FeedCommentItem>>(emptyList()) }
 
-    val allComments = remember(post.comments, localAddedComments) {
-        val existingIds = post.comments.map { it.id }.toSet()
-        post.comments + localAddedComments.filter { it.id !in existingIds }
+    val allComments = remember(post.comments) {
+        post.comments.distinctBy { "${it.id}|${it.authorName.trim().lowercase()}|${it.content.trim()}" }
     }
 
     val safeDaysRemaining = post.daysRemaining.coerceIn(1, 7)
@@ -978,13 +976,6 @@ fun FeedPostCard(
                             onClick = {
                                 val clean = commentDraft.trim()
                                 if (clean.isNotEmpty()) {
-                                    localAddedComments = localAddedComments + FeedCommentItem(
-                                        id = "local_${System.currentTimeMillis()}",
-                                        postId = post.id,
-                                        authorName = currentUserName,
-                                        content = clean,
-                                        timeAgo = if (isEnglish) "Just now" else "Ahora"
-                                    )
                                     onAddComment(clean)
                                     commentDraft = ""
                                 }

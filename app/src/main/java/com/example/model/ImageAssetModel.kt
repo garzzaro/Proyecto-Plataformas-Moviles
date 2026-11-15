@@ -1,5 +1,6 @@
 package com.example.model
 
+import android.util.Base64
 import androidx.annotation.DrawableRes
 import com.example.R
 
@@ -128,13 +129,36 @@ object AvatarCatalog {
     fun sanitizeModel(model: Any?, @DrawableRes fallbackResId: Int = R.drawable.ic_pulpo): Any {
         return when (model) {
             null -> fallbackResId
-            is ImageAssetModel -> model.resolveCoilData()
+            is ImageAssetModel -> {
+                val resolved = model.resolveCoilData()
+                if (resolved is String) sanitizeModel(resolved, fallbackResId) else resolved
+            }
             is String -> {
                 val trimmed = model.trim()
-                if (trimmed.isEmpty() || isBrokenUrl(trimmed)) fallbackResId else trimmed
+                when {
+                    trimmed.isEmpty() || isBrokenUrl(trimmed) -> fallbackResId
+                    trimmed.startsWith("data:image/", ignoreCase = true) &&
+                        trimmed.contains(";base64,", ignoreCase = true) -> {
+                        val b64 = trimmed.substringAfter(";base64,", "").trim()
+                        val bytes = decodeBase64Safely(b64)
+                        if (bytes != null && bytes.isNotEmpty()) bytes else fallbackResId
+                    }
+                    else -> trimmed
+                }
             }
             is Int -> if (model == R.drawable.ic_launcher_background) fallbackResId else model
             else -> model
+        }
+    }
+
+    private fun decodeBase64Safely(raw: String): ByteArray? {
+        if (raw.isBlank()) return null
+        return runCatching {
+            Base64.decode(raw, Base64.DEFAULT)
+        }.getOrElse {
+            runCatching {
+                java.util.Base64.getMimeDecoder().decode(raw)
+            }.getOrNull()
         }
     }
 }
@@ -286,7 +310,8 @@ object FriendDirectory {
         customScore: Int? = null,
         customHabits: Int? = null,
         customStreak: Int? = null,
-        nowMillis: Long = System.currentTimeMillis()
+        nowMillis: Long = System.currentTimeMillis(),
+        customAvatarUrl: String? = null
     ): FriendEntity {
         val code = rawCode.trim().removePrefix("#")
         val preset = DEFAULT_FRIENDS.firstOrNull { it.friendCode == code } ?: EXTRA_DIRECTORY[code]
@@ -295,6 +320,10 @@ object FriendDirectory {
         val resolvedName = customName?.trim()?.takeIf { it.isNotEmpty() }
             ?: preset?.displayName
             ?: "${SAMPLE_NAMES[codeInt % SAMPLE_NAMES.size]} (#$code)"
+
+        val resolvedAvatar = customAvatarUrl?.trim()?.takeIf {
+            it.isNotEmpty() && !AvatarCatalog.isBrokenUrl(it)
+        } ?: preset?.avatarUrl
 
         val resolvedHabits = (customHabits ?: preset?.completedHabits ?: (4 + (codeInt % 15))).coerceAtLeast(0)
         val resolvedStreak = (customStreak ?: preset?.currentStreak ?: (1 + (codeInt % 10))).coerceAtLeast(0)
@@ -306,7 +335,7 @@ object FriendDirectory {
             friendCode = code,
             userId = userId,
             displayName = resolvedName,
-            avatarUrl = preset?.avatarUrl,
+            avatarUrl = resolvedAvatar,
             score = resolvedScore,
             completedHabits = resolvedHabits,
             currentStreak = resolvedStreak,
