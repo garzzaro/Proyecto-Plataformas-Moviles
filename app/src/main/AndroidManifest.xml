@@ -5,8 +5,12 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
-    <!-- Solicita permiso para acceder a Internet (necesario para Coil al cargar imágenes remotas) -->
+    <!-- Permisos para Internet, Notificaciones del sistema y Cámara -->
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+    <uses-feature android:name="android.hardware.camera.autofocus" android:required="false" />
 
     <!-- Inicia la definición de la aplicación Android y su configuración global -->
     <application
